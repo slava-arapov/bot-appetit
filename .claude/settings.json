@@ -1,0 +1,27 @@
+{
+  "plansDirectory": "./docs/plans",
+  "enableAllProjectMcpServers": true,
+  "permissions": {
+    "defaultMode": "acceptEdits",
+    "allow": [
+      "mcp__ide__getDiagnostics",
+      "WebSearch",
+      "Bash(git:*)",
+      "Bash(ls:*)",
+      "Bash(cd:*)",
+      "Bash(grep:*)",
+      "Bash(head:*)",
+      "Bash(sed:*)",
+      "Edit(src/**)"
+    ],
+    "deny": [
+      "Read(.env*)",
+      "Grep(.env*)"
+    ]
+  },
+  "env": {
+    "ENABLE_TOOL_SEARCH": "auto:5"
+  },
+  "includeCoAuthoredBy": false,
+  "language": "russian"
+}

@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find C:UsersSlavareposbot-appetit -type f -name *.py -o -name .env* -o -name .gitignore -o -name requirements.txt -o -name *.json -o -name *.yaml -o -name *.yml -o -name *.md)",
+      "Bash(python -m pip install -r requirements.txt)",
+      "Bash(pip show:*)",
+      "Bash(pip index:*)",
+      "Bash(python:*)"
+    ]
+  }
+}
