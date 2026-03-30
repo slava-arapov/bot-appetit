@@ -45,6 +45,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply, model_name = await run_agent(user_text)
 
     if model_name:
-        reply = f"{reply}\n\n_{model_name}_"
+        reply = f"{reply}\n\n||_{model_name}_||"
 
     await _send(update, reply)

@@ -10,8 +10,11 @@ BACKUP_REPO_PATH = os.environ.get("BACKUP_REPO_PATH", "")
 
 LLM_PROVIDER = "openrouter"
 LLM_MODELS = [
-    "meta-llama/llama-3.3-70b-instruct:free",
-    "openai/gpt-oss-120b:free",
+#     "meta-llama/llama-3.3-70b-instruct:free"
+#     "openai/gpt-oss-120b:free"
+#     "minimax/minimax-m2.7",
+#     "deepseek/deepseek-v3.2",
+    "minimax/minimax-m2.5",
     "anthropic/claude-haiku-4-5"
 ]
 
