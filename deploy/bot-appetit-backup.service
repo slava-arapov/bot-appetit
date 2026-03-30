@@ -1,0 +1,14 @@
+[Unit]
+Description=Bot Appetit Data Backup
+After=network.target
+
+[Service]
+User=botappetit
+WorkingDirectory=/home/botappetit/bot-appetit
+ExecStart=/home/botappetit/bot-appetit/.venv/bin/python backup.py
+Restart=always
+RestartSec=60
+EnvironmentFile=/home/botappetit/bot-appetit/.env
+
+[Install]
+WantedBy=multi-user.target

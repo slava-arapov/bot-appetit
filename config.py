@@ -15,6 +15,7 @@ LLM_MODELS = [
 #     "minimax/minimax-m2.7",
 #     "deepseek/deepseek-v3.2",
     "minimax/minimax-m2.5",
+#     "google/gemini-3.1-flash-lite-preview",
     "anthropic/claude-haiku-4-5"
 ]
 

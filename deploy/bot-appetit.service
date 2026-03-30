@@ -1,0 +1,14 @@
+[Unit]
+Description=Bot Appetit Telegram Bot
+After=network.target
+
+[Service]
+User=botappetit
+WorkingDirectory=/home/botappetit/bot-appetit
+ExecStart=/home/botappetit/bot-appetit/.venv/bin/python main.py
+Restart=always
+RestartSec=10
+EnvironmentFile=/home/botappetit/bot-appetit/.env
+
+[Install]
+WantedBy=multi-user.target

@@ -47,9 +47,58 @@ bot-appetit/
 1. Создай приватный git-репозиторий
 2. Склонируй его локально
 3. Укажи путь в `BACKUP_REPO_PATH`
-4. Запусти `python backup.py` как отдельный процесс
+4. Запусти `python backup.py` как отдельный процесс (или через systemd-сервис, см. ниже)
 
 Бэкап запускается ежедневно в 03:00.
+
+## Деплой на VPS
+
+### Systemd-сервисы
+
+В папке `deploy/` лежат готовые unit-файлы для systemd.
+
+**Установка:**
+
+```bash
+sudo cp deploy/bot-appetit.service /etc/systemd/system/
+sudo cp deploy/bot-appetit-backup.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable bot-appetit bot-appetit-backup
+sudo systemctl start bot-appetit bot-appetit-backup
+```
+
+| Сервис               | Что делает                                                                          |
+|----------------------|-------------------------------------------------------------------------------------|
+| `bot-appetit`        | Основной бот. Перезапускается автоматически при краше и при каждом деплое через CI. |
+| `bot-appetit-backup` | Фоновый процесс. Каждый день в 03:00 пушит `data/` в приватный git-репо.            |
+
+**Полезные команды:**
+
+```bash
+sudo systemctl status bot-appetit          # статус бота
+sudo journalctl -u bot-appetit -f          # живые логи
+sudo systemctl restart bot-appetit         # ручной рестарт
+```
+
+### CI/CD (GitHub Actions)
+
+Каждый `git push` в `main` автоматически деплоит на VPS:
+`git pull → pip install → systemctl restart bot-appetit`
+
+Для работы нужно добавить в **Settings → Secrets** репозитория:
+
+| Secret     | Значение               |
+|------------|------------------------|
+| `SSH_HOST` | IP адрес VPS           |
+| `SSH_USER` | пользователь на VPS    |
+| `SSH_KEY`  | приватный SSH-ключ     |
+| `SSH_PORT` | порт SSH (обычно `22`) |
+
+> Пользователю на VPS нужно право запускать `sudo systemctl restart bot-appetit` без пароля.
+> Добавь в `/etc/sudoers.d/botappetit`:
+> ```
+> botappetit ALL=(ALL) NOPASSWD: /bin/systemctl restart bot-appetit
+> ```
 
 ## Модель
 
@@ -58,6 +107,10 @@ bot-appetit/
 
 ## Backlog
 
+- Несколько пользователей
+- Ограничение на количество сообщений в сутки
+- Мультиязычность
+- Отправляет "Печатает..." во время ожидания ответа
 - Сезонность продуктов
 - Список покупок
 - «Что есть дома» — учёт остатков
