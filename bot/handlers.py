@@ -40,7 +40,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not profile.get("onboarding_done"):
         reply = await run_onboarding(user_text)
+        model_name = None
     else:
-        reply = await run_agent(user_text)
+        reply, model_name = await run_agent(user_text)
+
+    if model_name:
+        reply = f"{reply}\n\n_{model_name}_"
 
     await _send(update, reply)

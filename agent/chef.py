@@ -1,6 +1,8 @@
 import json
 
-from config import OPENROUTER_API_KEY, LLM_MODEL, CONTEXT_WINDOW
+import logging
+
+from config import OPENROUTER_API_KEY, LLM_MODELS, CONTEXT_WINDOW
 from llm.openrouter import OpenRouterClient
 from memory.store import (
     load_profile, save_profile,
@@ -8,7 +10,9 @@ from memory.store import (
     apply_memory_update,
 )
 
-_llm = OpenRouterClient(api_key=OPENROUTER_API_KEY, model=LLM_MODEL)
+logger = logging.getLogger(__name__)
+
+_llm = OpenRouterClient(api_key=OPENROUTER_API_KEY, models=LLM_MODELS)
 
 ONBOARDING_QUESTIONS = [
     "Привет! Я твой личный шеф-повар 🍳 Давай познакомимся. Какие кухни мира тебе нравятся? (например: итальянская, азиатская, грузинская)",
@@ -120,7 +124,7 @@ def parse_response(raw: str) -> tuple[str, dict]:
         return raw, {}
 
 
-async def run_agent(user_message: str) -> str:
+async def run_agent(user_message: str) -> tuple[str, str | None]:
     profile = load_profile()
     history = load_history()
 
@@ -129,7 +133,11 @@ async def run_agent(user_message: str) -> str:
     messages = load_context()
     messages.append({"role": "user", "content": user_message})
 
-    raw = await _llm.chat(system=system, messages=messages)
+    try:
+        raw, model_name = await _llm.chat(system=system, messages=messages)
+    except Exception as e:
+        logger.error("LLM call failed: %s", e, exc_info=True)
+        return "Все модели сейчас недоступны, попробуй чуть позже.", None
 
     reply, memory_update = parse_response(raw)
 
@@ -138,7 +146,7 @@ async def run_agent(user_message: str) -> str:
 
     apply_memory_update(memory_update)
 
-    return reply
+    return reply, model_name
 
 
 async def run_onboarding(user_message: str) -> str:

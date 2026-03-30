@@ -46,7 +46,8 @@ def save_profile(data: dict):
 
 
 def load_history() -> list:
-    return _load_json(HISTORY_PATH, [])
+    data = _load_json(HISTORY_PATH, [])
+    return data if isinstance(data, list) else []
 
 
 def save_history(data: list):

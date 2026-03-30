@@ -9,7 +9,12 @@ ADMIN_USER_ID = int(os.environ["ADMIN_USER_ID"])
 BACKUP_REPO_PATH = os.environ.get("BACKUP_REPO_PATH", "")
 
 LLM_PROVIDER = "openrouter"
-LLM_MODEL = "anthropic/claude-haiku-4-5"
+LLM_MODELS = [
+    "meta-llama/llama-3.3-70b-instruct:free",
+    "openai/gpt-oss-120b:free",
+    "anthropic/claude-haiku-4-5"
+]
+
 CONTEXT_WINDOW = 20
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
