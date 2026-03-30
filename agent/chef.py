@@ -103,24 +103,28 @@ def build_system_prompt(profile: dict, history: list) -> str:
     )
 
 
-def _strip_markdown_json(raw: str) -> str:
-    """Стрипает ```json ... ``` или ``` ... ``` обёртки если есть."""
+def _extract_json(raw: str) -> str:
+    """Извлекает JSON-объект из текста: снимает markdown-обёртку, находит {...}."""
     stripped = raw.strip()
     if stripped.startswith("```"):
         lines = stripped.splitlines()
-        # убираем первую строку (```json или ```) и последнюю (```)
         inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
-        return "\n".join(inner)
+        stripped = "\n".join(inner).strip()
+    start = stripped.find("{")
+    end = stripped.rfind("}") + 1
+    if start != -1 and end > start:
+        return stripped[start:end]
     return stripped
 
 
 def parse_response(raw: str) -> tuple[str, dict]:
     try:
-        data = json.loads(_strip_markdown_json(raw))
-        reply = data.get("reply", raw)
+        data = json.loads(_extract_json(raw))
+        reply = data.get("reply") or raw
         memory_update = data.get("memory_update", {})
         return reply, memory_update
-    except (json.JSONDecodeError, AttributeError):
+    except (json.JSONDecodeError, AttributeError, TypeError):
+        logger.warning("Не удалось распарсить ответ LLM как JSON: %s", raw[:200])
         return raw, {}
 
 
