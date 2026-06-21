@@ -7,7 +7,7 @@ from llm.openrouter import OpenRouterClient
 from memory.store import (
     load_profile, save_profile,
     load_history, load_context, save_context,
-    apply_memory_update,
+    load_pantry, apply_memory_update,
 )
 
 logger = logging.getLogger(__name__)
@@ -20,9 +20,10 @@ ONBOARDING_QUESTIONS = [
     "Есть ли у тебя диета, аллергии или другие ограничения в еде?",
     "На сколько человек ты обычно готовишь?",
     "Сколько времени ты обычно готов тратить на готовку? (например: до 30 минут, 1 час, не важно)",
+    "Какая техника и посуда у тебя есть на кухне? (например: духовка, мультиварка, блендер, аэрогриль)",
 ]
 
-ONBOARDING_FIELDS = ["likes", "dislikes", "restrictions", "servings", "cooking_time"]
+ONBOARDING_FIELDS = ["likes", "dislikes", "restrictions", "servings", "cooking_time", "equipment"]
 
 SYSTEM_PROMPT_TEMPLATE = """\
 Ты — Bot Appetit, персональный шеф-повар пользователя в Telegram.
@@ -33,10 +34,13 @@ SYSTEM_PROMPT_TEMPLATE = """\
 
 ## Что ты умеешь
 
-- Придумываешь рецепты по тому что есть в холодильнике
+- Придумываешь рецепты по тому, что есть в холодильнике
 - Составляешь план питания на неделю
 - Даёшь пошаговые инструкции готовки — чётко и без воды
 - Запоминаешь предпочтения пользователя и учитываешь их в следующих ответах
+- Следишь за запасами: предлагаешь рецепты так, чтобы первыми использовались продукты, которые скоро испортятся или лежат дольше остальных — не допускаешь, чтобы они портились впустую
+- Учитываешь, какая техника и посуда есть у пользователя — не предлагаешь способы готовки под отсутствующее оборудование
+- Если для рецепта не хватает каких-то ингредиентов из запасов — прямо говоришь об этом в ответе и называешь, что докупить
 
 ## Как ты говоришь
 
@@ -47,6 +51,8 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - Не осуждаешь вкусы, но своё мнение имеешь
 - Если что-то пошло не так на кухне — помогаешь исправить, не осуждаешь
 - Если из диалога узнал что-то новое о вкусах — включи в memory_update
+- Если узнал, что пользователь что-то купил, доел или выбросил — обнови pantry в memory_update (включая quantity, если знаешь точное количество, например "2 пачки")
+- Если узнал о новой технике/посуде — включи в memory_update.equipment
 - Формат рецепта:
 * Ингредиенты (список продуктов с количеством)
 * Приготовление
@@ -66,6 +72,8 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - Любит: {likes}
 - Не любит: {dislikes}
 - Ограничения: {restrictions}
+- Техника и посуда: {equipment}
+- Запасы (от самого срочного к менее срочному): {pantry}
 - Текущий контекст: {context_notes}
 - Последние блюда: {last_dishes}
 
@@ -76,6 +84,10 @@ SYSTEM_PROMPT_TEMPLATE = """\
     "likes": [],
     "dislikes": [],
     "restrictions": [],
+    "equipment": [],
+    "pantry": [
+      {{"name": "название продукта", "status": "have|low|out", "quantity": "2 пачки (опционально)", "expiry_date": "YYYY-MM-DD (опционально)"}}
+    ],
     "current_context": "",
     "history": {{
       "dish": "название блюда",
@@ -88,7 +100,25 @@ SYSTEM_PROMPT_TEMPLATE = """\
 """
 
 
-def build_system_prompt(profile: dict, history: list) -> str:
+def _format_pantry(pantry: list[dict]) -> str:
+    if not pantry:
+        return "нет данных"
+
+    def sort_key(item):
+        return (item.get("expiry_date") or "9999-99-99", item.get("added_date") or "")
+
+    ordered = sorted(pantry, key=sort_key)
+
+    parts = []
+    for item in ordered:
+        status = item.get("status", "have")
+        detail = f"годен до {item['expiry_date']}" if item.get("expiry_date") else f"добавлен {item.get('added_date', '?')}"
+        quantity = f", {item['quantity']}" if item.get("quantity") else ""
+        parts.append(f"{item['name']} ({status}{quantity}, {detail})")
+    return ", ".join(parts)
+
+
+def build_system_prompt(profile: dict, history: list, pantry: list) -> str:
     last_dishes = history[-5:] if history else []
     dishes_str = ", ".join(
         f"{d['dish']} ({d.get('rating', '?')})" for d in last_dishes
@@ -98,6 +128,8 @@ def build_system_prompt(profile: dict, history: list) -> str:
         likes=", ".join(profile.get("likes", [])) or "не указано",
         dislikes=", ".join(profile.get("dislikes", [])) or "не указано",
         restrictions=", ".join(profile.get("restrictions", [])) or "нет",
+        equipment=", ".join(profile.get("equipment", [])) or "не указано",
+        pantry=_format_pantry(pantry),
         context_notes=profile.get("current_context", {}).get("notes") or "нет",
         last_dishes=dishes_str,
     )
@@ -131,8 +163,9 @@ def parse_response(raw: str) -> tuple[str, dict]:
 async def run_agent(user_message: str) -> tuple[str, str | None]:
     profile = load_profile()
     history = load_history()
+    pantry = load_pantry()
 
-    system = build_system_prompt(profile, history)
+    system = build_system_prompt(profile, history, pantry)
 
     messages = load_context()
     messages.append({"role": "user", "content": user_message})
@@ -160,7 +193,7 @@ async def run_onboarding(user_message: str) -> str:
     # Сохранить ответ на текущий шаг (кроме первого приветствия)
     if step > 0:
         field = ONBOARDING_FIELDS[step - 1]
-        if field in ("likes", "dislikes", "restrictions"):
+        if field in ("likes", "dislikes", "restrictions", "equipment"):
             # Разбиваем ответ на список (через запятую или перенос строки)
             items = [i.strip() for i in user_message.replace("\n", ",").split(",") if i.strip()]
             profile[field] = items

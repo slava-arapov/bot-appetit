@@ -23,15 +23,20 @@ user message
   → bot/handlers.py       отправка reply с parse_mode=MARKDOWN
 ```
 
-### Память — три JSON-файла в `data/`
+### Память — JSON-файлы в `data/`
 
 | Файл | Что хранит |
 |---|---|
-| `profile.json` | вкусы, ограничения, онбординг-статус, текущий контекст |
+| `profile.json` | вкусы, ограничения, техника/посуда (`equipment`), онбординг-статус, текущий контекст |
 | `history.json` | список блюд с оценками и датами |
 | `context.json` | последние 20 сообщений диалога для LLM |
+| `pantry.json` | запасы продуктов: `name`, `status` (have/low/out), `added_date`, опционально `expiry_date` и `quantity` (свободная строка, например "2 пачки") |
 
 `data/` — в `.gitignore`. Бэкапится отдельно через `backup.py`.
+
+Запасы (`pantry`) и техника (`equipment`) обновляются так же, как остальная память — через `memory_update` от LLM, без отдельных команд бота. Список покупок не хранится отдельно: при предложении рецепта бот сравнивает ингредиенты с `pantry` и называет недостающее прямо в ответе.
+
+Ежедневно в 09:00 `bot/jobs.py:notify_expiring` проверяет `pantry.json` на продукты с `expiry_date` в пределах `EXPIRY_WARNING_DAYS` (см. `config.py`) и шлёт уведомление — детерминированно, без вызова LLM. Регистрируется через `app.job_queue.run_daily(...)` в `main.py` (нужен extra `python-telegram-bot[job-queue]`).
 
 ## Ключевые решения
 
@@ -58,7 +63,7 @@ user message
 
 ## Онбординг
 
-Запускается когда `profile.json["onboarding_done"] == false`. Пять вопросов подряд, ответы пишутся в profile. Шаг хранится в `profile["onboarding_step"]`.
+Запускается когда `profile.json["onboarding_done"] == false`. Шесть вопросов подряд (включая вопрос про технику/посуду), ответы пишутся в profile. Шаг хранится в `profile["onboarding_step"]`.
 
 После онбординга все сообщения идут через `run_agent()`.
 

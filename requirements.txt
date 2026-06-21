@@ -1,5 +1,5 @@
 openrouter
-python-telegram-bot>=20.0
+python-telegram-bot[job-queue]>=20.0
 python-dotenv
 schedule
 telegramify-markdown==1.1.1

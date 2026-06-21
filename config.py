@@ -14,7 +14,7 @@ LLM_MODELS = [
 #     "openai/gpt-oss-120b:free"
 #     "minimax/minimax-m2.7",
 #     "deepseek/deepseek-v3.2",
-    "google/gemma-4-26b-a4b-it"
+    "google/gemma-4-26b-a4b-it",
     "minimax/minimax-m2.5",
     "anthropic/claude-haiku-4-5"
 ]
@@ -25,3 +25,6 @@ DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 PROFILE_PATH = os.path.join(DATA_DIR, "profile.json")
 HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
 CONTEXT_PATH = os.path.join(DATA_DIR, "context.json")
+PANTRY_PATH = os.path.join(DATA_DIR, "pantry.json")
+
+EXPIRY_WARNING_DAYS = 2

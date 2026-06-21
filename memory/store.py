@@ -1,13 +1,22 @@
 import json
 import os
-from datetime import date
+from datetime import date, timedelta
 
-from config import PROFILE_PATH, HISTORY_PATH, CONTEXT_PATH, CONTEXT_WINDOW, DATA_DIR
+from config import (
+    PROFILE_PATH,
+    HISTORY_PATH,
+    CONTEXT_PATH,
+    PANTRY_PATH,
+    CONTEXT_WINDOW,
+    DATA_DIR,
+    EXPIRY_WARNING_DAYS,
+)
 
 DEFAULT_PROFILE = {
     "likes": [],
     "dislikes": [],
     "restrictions": [],
+    "equipment": [],
     "onboarding_done": False,
     "onboarding_step": 0,
     "current_context": {"notes": "", "updated": ""},
@@ -62,6 +71,67 @@ def save_context(data: list):
     _save_json(CONTEXT_PATH, data)
 
 
+def load_pantry() -> list:
+    data = _load_json(PANTRY_PATH, [])
+    return data if isinstance(data, list) else []
+
+
+def save_pantry(data: list):
+    _save_json(PANTRY_PATH, data)
+
+
+def apply_pantry_update(items: list[dict]):
+    """Применяет частичные изменения запасов: добавление/обновление по name, удаление при status=out."""
+    if not items:
+        return
+
+    pantry = load_pantry()
+    by_name = {item["name"]: item for item in pantry}
+
+    for change in items:
+        name = change.get("name")
+        if not name:
+            continue
+
+        if change.get("status") == "out":
+            by_name.pop(name, None)
+            continue
+
+        existing = by_name.get(name)
+        if existing is None:
+            existing = {"name": name, "added_date": str(date.today())}
+            by_name[name] = existing
+
+        existing["status"] = change.get("status", existing.get("status", "have"))
+        if change.get("expiry_date"):
+            existing["expiry_date"] = change["expiry_date"]
+        if change.get("quantity"):
+            existing["quantity"] = change["quantity"]
+
+    save_pantry(list(by_name.values()))
+
+
+def check_expiring_soon() -> list[dict]:
+    """Возвращает записи pantry с expiry_date в пределах EXPIRY_WARNING_DAYS, отсортированные по дате."""
+    today = date.today()
+    cutoff = today + timedelta(days=EXPIRY_WARNING_DAYS)
+
+    soon = []
+    for item in load_pantry():
+        expiry_str = item.get("expiry_date")
+        if not expiry_str:
+            continue
+        try:
+            expiry = date.fromisoformat(expiry_str)
+        except ValueError:
+            continue
+        if expiry <= cutoff:
+            soon.append(item)
+
+    soon.sort(key=lambda i: i["expiry_date"])
+    return soon
+
+
 def apply_memory_update(update: dict):
     if not update:
         return
@@ -69,7 +139,7 @@ def apply_memory_update(update: dict):
     profile = load_profile()
     history = load_history()
 
-    for field in ("likes", "dislikes", "restrictions"):
+    for field in ("likes", "dislikes", "restrictions", "equipment"):
         if not isinstance(profile[field], list):
             profile[field] = []
         new_items = update.get(field, [])
@@ -91,5 +161,7 @@ def apply_memory_update(update: dict):
             entry.setdefault("date", str(date.today()))
             history.append(entry)
             save_history(history)
+
+    apply_pantry_update(update.get("pantry", []))
 
     save_profile(profile)
