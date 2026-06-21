@@ -119,7 +119,7 @@ def _extract_json(raw: str) -> str:
 
 def parse_response(raw: str) -> tuple[str, dict]:
     try:
-        data = json.loads(_extract_json(raw))
+        data = json.loads(_extract_json(raw), strict=False)
         reply = data.get("reply") or raw
         memory_update = data.get("memory_update", {})
         return reply, memory_update

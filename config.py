@@ -14,8 +14,8 @@ LLM_MODELS = [
 #     "openai/gpt-oss-120b:free"
 #     "minimax/minimax-m2.7",
 #     "deepseek/deepseek-v3.2",
+    "google/gemma-4-26b-a4b-it"
     "minimax/minimax-m2.5",
-#     "google/gemini-3.1-flash-lite-preview",
     "anthropic/claude-haiku-4-5"
 ]
 
