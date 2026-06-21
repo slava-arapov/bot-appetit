@@ -3,10 +3,10 @@ import os
 from datetime import date, timedelta
 
 from config import (
-    PROFILE_PATH,
-    HISTORY_PATH,
-    CONTEXT_PATH,
-    PANTRY_PATH,
+    PROFILE_FILENAME,
+    HISTORY_FILENAME,
+    CONTEXT_FILENAME,
+    PANTRY_FILENAME,
     CONTEXT_WINDOW,
     DATA_DIR,
     EXPIRY_WARNING_DAYS,
@@ -23,26 +23,33 @@ DEFAULT_PROFILE = {
 }
 
 
-def _ensure_data_dir():
-    os.makedirs(DATA_DIR, exist_ok=True)
+def _user_dir(user_id: int) -> str:
+    return os.path.join(DATA_DIR, str(user_id))
+
+
+def _user_path(user_id: int, filename: str) -> str:
+    return os.path.join(_user_dir(user_id), filename)
+
+
+def _ensure_user_dir(user_id: int):
+    os.makedirs(_user_dir(user_id), exist_ok=True)
 
 
 def _load_json(path: str, default):
-    _ensure_data_dir()
     if not os.path.exists(path):
         return default
     with open(path, encoding="utf-8") as f:
         return json.load(f)
 
 
-def _save_json(path: str, data):
-    _ensure_data_dir()
+def _save_json(user_id: int, path: str, data):
+    _ensure_user_dir(user_id)
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 
-def load_profile() -> dict:
-    profile = _load_json(PROFILE_PATH, {})
+def load_profile(user_id: int) -> dict:
+    profile = _load_json(_user_path(user_id, PROFILE_FILENAME), {})
     # Заполнить отсутствующие поля дефолтами
     for key, value in DEFAULT_PROFILE.items():
         if key not in profile:
@@ -50,42 +57,42 @@ def load_profile() -> dict:
     return profile
 
 
-def save_profile(data: dict):
-    _save_json(PROFILE_PATH, data)
+def save_profile(user_id: int, data: dict):
+    _save_json(user_id, _user_path(user_id, PROFILE_FILENAME), data)
 
 
-def load_history() -> list:
-    data = _load_json(HISTORY_PATH, [])
+def load_history(user_id: int) -> list:
+    data = _load_json(_user_path(user_id, HISTORY_FILENAME), [])
     return data if isinstance(data, list) else []
 
 
-def save_history(data: list):
-    _save_json(HISTORY_PATH, data)
+def save_history(user_id: int, data: list):
+    _save_json(user_id, _user_path(user_id, HISTORY_FILENAME), data)
 
 
-def load_context() -> list:
-    return _load_json(CONTEXT_PATH, [])
+def load_context(user_id: int) -> list:
+    return _load_json(_user_path(user_id, CONTEXT_FILENAME), [])
 
 
-def save_context(data: list):
-    _save_json(CONTEXT_PATH, data)
+def save_context(user_id: int, data: list):
+    _save_json(user_id, _user_path(user_id, CONTEXT_FILENAME), data)
 
 
-def load_pantry() -> list:
-    data = _load_json(PANTRY_PATH, [])
+def load_pantry(user_id: int) -> list:
+    data = _load_json(_user_path(user_id, PANTRY_FILENAME), [])
     return data if isinstance(data, list) else []
 
 
-def save_pantry(data: list):
-    _save_json(PANTRY_PATH, data)
+def save_pantry(user_id: int, data: list):
+    _save_json(user_id, _user_path(user_id, PANTRY_FILENAME), data)
 
 
-def apply_pantry_update(items: list[dict]):
+def apply_pantry_update(user_id: int, items: list[dict]):
     """Применяет частичные изменения запасов: добавление/обновление по name, удаление при status=out."""
     if not items:
         return
 
-    pantry = load_pantry()
+    pantry = load_pantry(user_id)
     by_name = {item["name"]: item for item in pantry}
 
     for change in items:
@@ -108,16 +115,16 @@ def apply_pantry_update(items: list[dict]):
         if change.get("quantity"):
             existing["quantity"] = change["quantity"]
 
-    save_pantry(list(by_name.values()))
+    save_pantry(user_id, list(by_name.values()))
 
 
-def check_expiring_soon() -> list[dict]:
+def check_expiring_soon(user_id: int) -> list[dict]:
     """Возвращает записи pantry с expiry_date в пределах EXPIRY_WARNING_DAYS, отсортированные по дате."""
     today = date.today()
     cutoff = today + timedelta(days=EXPIRY_WARNING_DAYS)
 
     soon = []
-    for item in load_pantry():
+    for item in load_pantry(user_id):
         expiry_str = item.get("expiry_date")
         if not expiry_str:
             continue
@@ -132,12 +139,12 @@ def check_expiring_soon() -> list[dict]:
     return soon
 
 
-def apply_memory_update(update: dict):
+def apply_memory_update(user_id: int, update: dict):
     if not update:
         return
 
-    profile = load_profile()
-    history = load_history()
+    profile = load_profile(user_id)
+    history = load_history(user_id)
 
     for field in ("likes", "dislikes", "restrictions", "equipment"):
         if not isinstance(profile[field], list):
@@ -160,8 +167,8 @@ def apply_memory_update(update: dict):
         if isinstance(entry, dict) and "dish" in entry:
             entry.setdefault("date", str(date.today()))
             history.append(entry)
-            save_history(history)
+            save_history(user_id, history)
 
-    apply_pantry_update(update.get("pantry", []))
+    apply_pantry_update(user_id, update.get("pantry", []))
 
-    save_profile(profile)
+    save_profile(user_id, profile)

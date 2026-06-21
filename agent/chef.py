@@ -160,14 +160,14 @@ def parse_response(raw: str) -> tuple[str, dict]:
         return raw, {}
 
 
-async def run_agent(user_message: str) -> tuple[str, str | None]:
-    profile = load_profile()
-    history = load_history()
-    pantry = load_pantry()
+async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
+    profile = load_profile(user_id)
+    history = load_history(user_id)
+    pantry = load_pantry(user_id)
 
     system = build_system_prompt(profile, history, pantry)
 
-    messages = load_context()
+    messages = load_context(user_id)
     messages.append({"role": "user", "content": user_message})
 
     try:
@@ -179,15 +179,15 @@ async def run_agent(user_message: str) -> tuple[str, str | None]:
     reply, memory_update = parse_response(raw)
 
     messages.append({"role": "assistant", "content": raw})
-    save_context(messages[-CONTEXT_WINDOW:])
+    save_context(user_id, messages[-CONTEXT_WINDOW:])
 
-    apply_memory_update(memory_update)
+    apply_memory_update(user_id, memory_update)
 
     return reply, model_name
 
 
-async def run_onboarding(user_message: str) -> str:
-    profile = load_profile()
+async def run_onboarding(user_id: int, user_message: str) -> str:
+    profile = load_profile(user_id)
     step = profile.get("onboarding_step", 0)
 
     # Сохранить ответ на текущий шаг (кроме первого приветствия)
@@ -204,12 +204,12 @@ async def run_onboarding(user_message: str) -> str:
     if step < len(ONBOARDING_QUESTIONS):
         question = ONBOARDING_QUESTIONS[step]
         profile["onboarding_step"] = step + 1
-        save_profile(profile)
+        save_profile(user_id, profile)
         return question
     else:
         # Онбординг завершён
         profile["onboarding_done"] = True
-        save_profile(profile)
+        save_profile(user_id, profile)
         return (
             "Отлично, я всё запомнил! Теперь я готов помогать тебе с готовкой. "
             "Что приготовим?"

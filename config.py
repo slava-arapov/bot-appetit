@@ -22,9 +22,11 @@ LLM_MODELS = [
 CONTEXT_WINDOW = 20
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-PROFILE_PATH = os.path.join(DATA_DIR, "profile.json")
-HISTORY_PATH = os.path.join(DATA_DIR, "history.json")
-CONTEXT_PATH = os.path.join(DATA_DIR, "context.json")
-PANTRY_PATH = os.path.join(DATA_DIR, "pantry.json")
+USERS_REGISTRY_PATH = os.path.join(DATA_DIR, "users.json")
+
+PROFILE_FILENAME = "profile.json"
+HISTORY_FILENAME = "history.json"
+CONTEXT_FILENAME = "context.json"
+PANTRY_FILENAME = "pantry.json"
 
 EXPIRY_WARNING_DAYS = 2

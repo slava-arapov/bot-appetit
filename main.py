@@ -1,10 +1,10 @@
 import datetime
 import logging
 
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
 from config import TELEGRAM_TOKEN
-from bot.handlers import start, handle_message
+from bot.handlers import start, handle_message, handle_approval_callback
 from bot.jobs import notify_expiring
 
 logging.basicConfig(
@@ -17,6 +17,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(CallbackQueryHandler(handle_approval_callback))
     app.job_queue.run_daily(notify_expiring, time=datetime.time(9, 0))
     logging.info("Bot Appetit запущен")
     app.run_polling()
