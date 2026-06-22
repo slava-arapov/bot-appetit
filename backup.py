@@ -1,4 +1,5 @@
 import os
+import sys
 import logging
 import schedule
 import time
@@ -29,4 +30,7 @@ def run_scheduler():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    run_scheduler()
+    if "--now" in sys.argv:
+        backup()
+    else:
+        run_scheduler()
