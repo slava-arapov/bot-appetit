@@ -181,5 +181,6 @@ sudo journalctl -u bot-appetit-backup -f
 sudo systemctl restart bot-appetit
 
 # Принудительный бэкап прямо сейчас
+sudo su - botappetit
 cd ~/bot-appetit && source .venv/bin/activate && python backup.py --now
 ```
