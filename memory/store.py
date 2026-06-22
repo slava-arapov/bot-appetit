@@ -163,11 +163,18 @@ def apply_memory_update(user_id: int, update: dict):
         }
 
     if "history" in update and update["history"]:
-        entry = update["history"]
-        if isinstance(entry, dict) and "dish" in entry:
-            entry.setdefault("date", str(date.today()))
-            history.append(entry)
-            save_history(user_id, history)
+        entries = update["history"]
+        if isinstance(entries, dict):
+            entries = [entries]
+        if isinstance(entries, list):
+            changed = False
+            for entry in entries:
+                if isinstance(entry, dict) and "dish" in entry:
+                    entry.setdefault("date", str(date.today()))
+                    history.append(entry)
+                    changed = True
+            if changed:
+                save_history(user_id, history)
 
     apply_pantry_update(user_id, update.get("pantry", []))
 

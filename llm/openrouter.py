@@ -12,7 +12,7 @@ class OpenRouterClient(BaseLLMClient):
         async with OpenRouter(api_key=self.api_key) as client:
             response = await client.chat.send_async(
                 models=self.models,
-                provider={"sort": "price", "data_collection": "allow"},
+                provider={"sort": "throughput", "data_collection": "allow"},
                 messages=[{"role": "system", "content": system}] + messages,
                 stream=False,
             )

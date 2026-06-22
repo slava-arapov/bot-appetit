@@ -16,7 +16,7 @@ LLM_MODELS = [
 #     "deepseek/deepseek-v3.2",
     "google/gemma-4-26b-a4b-it",
     "minimax/minimax-m2.5",
-    "anthropic/claude-haiku-4-5"
+    "anthropic/claude-haiku-4.5"
 ]
 
 CONTEXT_WINDOW = 20
