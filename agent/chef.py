@@ -149,15 +149,18 @@ def _extract_json(raw: str) -> str:
     return stripped
 
 
-def parse_response(raw: str) -> tuple[str, dict]:
+def parse_response(raw: str) -> tuple[str, dict, bool]:
     try:
         data = json.loads(_extract_json(raw), strict=False)
         reply = data.get("reply") or raw
         memory_update = data.get("memory_update", {})
-        return reply, memory_update
+        return reply, memory_update, True
     except (json.JSONDecodeError, AttributeError, TypeError):
         logger.warning("Не удалось распарсить ответ LLM как JSON: %s", raw[:200])
-        return raw, {}
+        return raw, {}, False
+
+
+_MAX_RETRIES = 3
 
 
 async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
@@ -170,13 +173,21 @@ async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
     messages = load_context(user_id)
     messages.append({"role": "user", "content": user_message})
 
-    try:
-        raw, model_name = await _llm.chat(system=system, messages=messages)
-    except Exception as e:
-        logger.error("LLM call failed: %s", e, exc_info=True)
-        return "Все модели сейчас недоступны, попробуй чуть позже.", None
+    for attempt in range(1, _MAX_RETRIES + 1):
+        try:
+            raw, model_name = await _llm.chat(system=system, messages=messages)
+        except Exception as e:
+            logger.error("LLM call failed: %s", e, exc_info=True)
+            return "Все модели сейчас недоступны, попробуй чуть позже.", None
 
-    reply, memory_update = parse_response(raw)
+        reply, memory_update, ok = parse_response(raw)
+
+        if ok:
+            break
+
+        logger.warning("Попытка %d/%d: невалидный JSON, перегенерирую.", attempt, _MAX_RETRIES)
+        if attempt == _MAX_RETRIES:
+            return "Что-то пошло не так, попробуй ещё раз.", None
 
     messages.append({"role": "assistant", "content": raw})
     save_context(user_id, messages[-CONTEXT_WINDOW:])

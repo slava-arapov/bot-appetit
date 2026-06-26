@@ -62,7 +62,7 @@ user message
 
 ## Известные особенности
 
-- LLM иногда оборачивает JSON в ```json ... ```. Функция `_strip_markdown_json()` в `agent/chef.py` это обрабатывает.
+- LLM иногда оборачивает JSON в ```json ... ``` или возвращает невалидный JSON. Функция `_extract_json()` в `agent/chef.py` снимает markdown-обёртку; если после этого `json.loads` всё равно падает, `run_agent` повторяет запрос до 3 раз (`_MAX_RETRIES`).
 - При отправке в Telegram используется `parse_mode=MARKDOWN` (legacy, не MarkdownV2). Если модель генерирует невалидный markdown — падбэк на plain text.
 - `asyncio.to_thread()` используется для вызова синхронного `openai` SDK из async-кода.
 
