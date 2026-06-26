@@ -26,18 +26,26 @@ python main.py
 ```
 bot-appetit/
 ├── agent/chef.py        # сборка промпта, парсинг ответа LLM, логика агента
-├── bot/handlers.py      # Telegram-хендлеры (PTB v20+ async)
+├── bot/
+│   ├── handlers.py      # Telegram-хендлеры (PTB v20+ async), "печатает...", одобрение заявок
+│   └── jobs.py          # фоновые задачи (уведомления об истекающих продуктах)
 ├── llm/
 │   ├── base.py          # абстрактный BaseLLMClient
-│   └── openrouter.py    # OpenRouterClient (OpenAI-compatible API)
-├── memory/store.py      # чтение/запись JSON-памяти
+│   └── openrouter.py    # OpenRouterClient (openrouter пакет, нативный async)
+├── memory/
+│   ├── store.py         # чтение/запись JSON-памяти пользователей
+│   └── users.py         # реестр доступа users.json (pending/approved/rejected)
+├── deploy/              # systemd unit-файлы
 ├── config.py            # конфиг из .env
 ├── main.py              # точка входа
 ├── backup.py            # автопуш data/ в приватный git-репо (раз в сутки)
 └── data/                # память агента (в .gitignore)
-    ├── profile.json     # вкусы, предпочтения, онбординг
-    ├── history.json     # история блюд с оценками
-    └── context.json     # последние 20 сообщений для LLM
+    ├── users.json       # реестр доступа всех пользователей
+    └── <user_id>/       # папка каждого пользователя
+        ├── profile.json # вкусы, ограничения, техника, онбординг
+        ├── history.json # история блюд с оценками
+        ├── context.json # последние 20 сообщений для LLM
+        └── pantry.json  # запасы продуктов (name, status, quantity, expiry_date)
 ```
 
 ## Бэкап памяти
@@ -100,18 +108,16 @@ sudo systemctl restart bot-appetit         # ручной рестарт
 > botappetit ALL=(ALL) NOPASSWD: /bin/systemctl restart bot-appetit
 > ```
 
-## Модель
+## Модели
 
-По умолчанию: `anthropic/claude-haiku-4-5` через OpenRouter.
-Чтобы сменить модель — поменяй `LLM_MODEL` в `config.py`.
+По умолчанию используется список моделей `LLM_MODELS` в `config.py` — бот пробует их по очереди по throughput. Имя выбранной модели отображается в конце каждого ответа как Telegram-спойлер.
+
+Чтобы сменить модели — поменяй `LLM_MODELS` в `config.py`.
 
 ## Backlog
 
-- Несколько пользователей
 - Ограничение на количество сообщений в сутки
 - Мультиязычность
-- Отправляет "Печатает..." во время ожидания ответа
 - Сезонность продуктов
 - Список покупок
-- «Что есть дома» — учёт остатков
 - Интеграции с рецептурными базами

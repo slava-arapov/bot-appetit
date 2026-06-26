@@ -4,7 +4,8 @@
 
 - Python 3.14, async
 - `python-telegram-bot` v20+ (PTB) — async Application, не Updater
-- `openai` SDK с `base_url="https://openrouter.ai/api/v1"` — OpenRouter-совместимый API
+- `openrouter` Python-пакет — нативный async-клиент для OpenRouter
+- `telegramify-markdown` — конвертирует произвольный markdown в валидный MarkdownV2 для Telegram
 - Секреты через `.env` + `python-dotenv`
 
 ## Архитектура
@@ -17,10 +18,10 @@
 user message
   → bot/handlers.py       проверка доступа (approved/pending/rejected/new), маршрутизация (онбординг / агент)
   → agent/chef.py         сборка system prompt из памяти конкретного user_id + вызов LLM
-  → llm/openrouter.py     HTTP-запрос к OpenRouter
+  → llm/openrouter.py     вызов OpenRouter через openrouter-пакет (нативный async)
   → agent/chef.py         парсинг JSON-ответа {reply, memory_update}
   → memory/store.py       обновление data/<user_id>/*.json
-  → bot/handlers.py       отправка reply с parse_mode=MARKDOWN
+  → bot/handlers.py       отправка reply с parse_mode=MARKDOWN_V2 (через telegramify_markdown)
 ```
 
 ### Память — JSON-файлы в `data/<user_id>/`
@@ -56,15 +57,17 @@ user message
 
 ## Добавление нового LLM-провайдера
 
-1. Создай `llm/myprovider.py`, унаследуйся от `BaseLLMClient`, реализуй `async def chat(...) -> str`
+1. Создай `llm/myprovider.py`, унаследуйся от `BaseLLMClient`, реализуй `async def chat(...) -> tuple[str, str]` (raw-ответ, имя модели)
 2. В `agent/chef.py` замени импорт и инициализацию `_llm`
 3. Добавь API-ключ в `.env` и `config.py`
 
 ## Известные особенности
 
 - LLM иногда оборачивает JSON в ```json ... ``` или возвращает невалидный JSON. Функция `_extract_json()` в `agent/chef.py` снимает markdown-обёртку; если после этого `json.loads` всё равно падает, `run_agent` повторяет запрос до 3 раз (`_MAX_RETRIES`).
-- При отправке в Telegram используется `parse_mode=MARKDOWN` (legacy, не MarkdownV2). Если модель генерирует невалидный markdown — падбэк на plain text.
-- `asyncio.to_thread()` используется для вызова синхронного `openai` SDK из async-кода.
+- При отправке в Telegram используется `parse_mode=MARKDOWN_V2`. Текст прогоняется через `telegramify_markdown.markdownify()`, которая экранирует спецсимволы. При `BadRequest` — падбэк на plain text.
+- После ответа в конце сообщения добавляется имя модели в виде Telegram-спойлера: `||_model_name_||`.
+- `openrouter` пакет имеет нативный async (`send_async`), `asyncio.to_thread()` не нужен.
+- Пока LLM думает, хендлер периодически отправляет `ChatAction.TYPING` (`_with_typing` в `bot/handlers.py`).
 
 ## Онбординг
 
