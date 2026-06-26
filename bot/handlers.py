@@ -1,11 +1,12 @@
 import asyncio
+import logging
 
 from telegramify_markdown import markdownify
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest
+from telegram.error import BadRequest, TimedOut
 
 from agent.chef import run_agent, run_onboarding
 from config import ADMIN_USER_ID
@@ -19,14 +20,29 @@ from memory.users import (
     is_rejection_notified,
 )
 
+logger = logging.getLogger(__name__)
+
 TYPING_REFRESH_SECONDS = 4
+_MAX_SEND_RETRIES = 3
 
 
 async def _send(update: Update, text: str):
-    try:
-        await update.message.reply_text(markdownify(text), parse_mode=ParseMode.MARKDOWN_V2)
-    except BadRequest:
-        await update.message.reply_text(text)
+    for attempt in range(_MAX_SEND_RETRIES):
+        try:
+            await update.message.reply_text(markdownify(text), parse_mode=ParseMode.MARKDOWN_V2)
+            return
+        except BadRequest:
+            await update.message.reply_text(text)
+            return
+        except TimedOut:
+            if attempt < _MAX_SEND_RETRIES - 1:
+                await asyncio.sleep(2)
+            else:
+                logger.error("Не удалось отправить сообщение после %d попыток (TimedOut)", _MAX_SEND_RETRIES)
+
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logger.error("Необработанное исключение", exc_info=context.error)
 
 
 def _resolve_access(update: Update) -> str:
