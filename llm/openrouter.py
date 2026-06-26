@@ -14,6 +14,7 @@ class OpenRouterClient(BaseLLMClient):
                 models=self.models,
                 provider={"sort": "throughput", "data_collection": "allow"},
                 messages=[{"role": "system", "content": system}] + messages,
+                response_format={"type": "json_object"},
                 stream=False,
             )
         return response.choices[0].message.content, response.model
