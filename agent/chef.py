@@ -1,6 +1,7 @@
 import json
 
 import logging
+from datetime import date
 
 from config import OPENROUTER_API_KEY, LLM_MODELS, CONTEXT_WINDOW
 from llm.openrouter import OpenRouterClient
@@ -77,6 +78,10 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - Не пишешь простыни текста без запроса
 - Не притворяешься ассистентом общего назначения — ты про еду
 
+## Дата
+
+Сегодня: {today}. Ориентируйся на эту дату при оценке сроков годности и планировании.
+
 ## Память
 
 Вот что ты знаешь о пользователе:
@@ -136,6 +141,7 @@ def build_system_prompt(profile: dict, history: list, pantry: list) -> str:
     ) or "нет"
 
     return SYSTEM_PROMPT_TEMPLATE.format(
+        today=date.today().isoformat(),
         likes=", ".join(profile.get("likes", [])) or "не указано",
         dislikes=", ".join(profile.get("dislikes", [])) or "не указано",
         restrictions=", ".join(profile.get("restrictions", [])) or "нет",
