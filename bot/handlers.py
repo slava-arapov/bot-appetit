@@ -159,6 +159,16 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
         approve_user(target_id)
         await query.edit_message_text(query.message.text + "\n\n✅ Одобрено")
         await context.bot.send_message(chat_id=target_id, text="Доступ открыт! Погнали 🍳")
+
+        profile = load_profile(target_id)
+        if not profile.get("onboarding_done"):
+            reply = await run_onboarding(target_id, "")
+            try:
+                await context.bot.send_message(
+                    chat_id=target_id, text=markdownify(reply), parse_mode=ParseMode.MARKDOWN_V2
+                )
+            except BadRequest:
+                await context.bot.send_message(chat_id=target_id, text=reply)
     else:
         reject_user(target_id)
         mark_rejection_notified(target_id)
