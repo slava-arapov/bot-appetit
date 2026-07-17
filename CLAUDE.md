@@ -71,9 +71,47 @@ user message
 
 ## Онбординг
 
-Запускается когда `profile.json["onboarding_done"] == false`. Шесть вопросов подряд (включая вопрос про технику/посуду), ответы пишутся в profile. Шаг хранится в `profile["onboarding_step"]`.
+Запускается когда `profile.json["onboarding_done"] == false`. Шесть вопросов подряд (включая вопрос про технику/посуду), ответы пишутся в profile. Шаг хранится в `profile["onboarding_step"]`: это индекс+1 вопроса, который уже задан и ждёт ответа (`ONBOARDING_QUESTIONS[onboarding_step - 1]`).
+
+`run_onboarding(user_id, user_message)` при `onboarding_step > 0` трактует `user_message` как ответ на текущий вопрос — поэтому его нельзя дёргать с пустой строкой посреди анкеты (затрёт текущий шаг). Для повторного показа текущего вопроса без сайд-эффектов есть `current_onboarding_question(user_id)` (read-only) — им пользуется `/start`, когда анкета не завершена.
 
 После онбординга все сообщения идут через `run_agent()`.
+
+## Команды бота
+
+Все команды, кроме `/pending` и `/broadcast`, доступны только `approved`-пользователям — гейт `_require_approved()` в `bot/handlers.py`, тот же, что у обычных сообщений (new → заявка в pending, pending → молчим, rejected → однократное уведомление).
+
+| Команда | Кому | Что делает | LLM? |
+|---|---|---|---|
+| `/start` | все | регистрация нового / повтор текущего вопроса анкеты, если онбординг не завершён / сброс `context.json` + приветствие, если завершён | по ситуации |
+| `/cook` | approved | шорткат: шлёт агенту фиксированный промпт «предложи рецепт из pantry», дальше как обычное сообщение (LLM, memory_update) | да |
+| `/random` | approved | шорткат: промпт «случайное блюдо-сюрприз с учётом вкусов/ограничений» | да |
+| `/pantry` | approved | рендер `pantry.json` по группам have/low/out | нет |
+| `/profile` | approved | рендер `profile.json` (вкусы, ограничения, техника) | нет |
+| `/reset` | approved | инлайн-меню сброса памяти | нет |
+| `/pending` | `ADMIN_USER_ID` | список заявок `pending` с кнопками ✅/❌ | нет |
+| `/broadcast <текст>` | `ADMIN_USER_ID` | рассылка всем `approved`-пользователям | нет |
+
+`/cook` и `/random` — не отдельная ветка логики, а просто заготовленный `user_text`, дальше идёт тот же путь, что и у любого сообщения (`_run_agent_reply()` в `bot/handlers.py`). `/pantry` и `/profile` намеренно детерминированные — читают JSON и рендерят напрямую, без похода к LLM.
+
+### `/reset` и подтверждение опасных действий
+
+`/reset` показывает 3 кнопки (`callback_data="reset:chat|onboarding|all"`):
+- `reset:chat` — забыть переписку (`context.json`), выполняется сразу, не опасно
+- `reset:onboarding` — заполнить анкету заново, **сначала спрашивает подтверждение** (Да/Нет)
+- `reset:all` — стереть анкету/историю/контекст/запасы, **сначала спрашивает подтверждение**
+
+Подтверждение — отдельный шаг в `handle_reset_callback`: кнопки Да/Нет шлют `reset_confirm:<action>` / `reset_cancel`. `reset:chat` в этот шаг не попадает — для него в `_DANGEROUS_RESET_ACTIONS` нет записи. Сама логика сброса — в `memory/store.py`: `reset_context`, `reset_onboarding`, `reset_all`. Стоящие отдельными командами `/reset_chat`, `/reset_onboarding`, `/reset_all` намеренно не сделаны — единственная точка входа для сброса это `/reset`, чтобы не тыкать по ошибке в деструктивную команду через автокомплит Telegram.
+
+### Меню команд в Telegram (`/`-подсказки)
+
+Регистрируется в `main.py:_post_init()` через `bot.set_my_commands()`. Обычным пользователям — `DEFAULT_COMMANDS`. Админу — `ADMIN_COMMANDS` (то же плюс `/pending`, `/broadcast`) через `scope=BotCommandScopeChat(chat_id=ADMIN_USER_ID)`: Telegram показывает разное меню в зависимости от того, в каком чате пользователь открыл `/`. Работает только если Telegram уже знает `chat_id` пользователя (т.е. тот хоть раз писал боту) — для админа это не проблема, он лениво регистрируется как `approved` в `users.json` при первом же обращении (`memory/users.py:ensure_approved()`, вызывается из `_resolve_access()`), а не одобряется вручную, как остальные.
+
+### Роутинг `CallbackQueryHandler`
+
+В `main.py` два колбэк-хендлера различаются по `pattern` — без этого первый зарегистрированный ловил бы вообще все inline-нажатия:
+- `handle_approval_callback` — `pattern=r"^(approve|reject):"` (одобрение заявок)
+- `handle_reset_callback` — `pattern=r"^reset"` (покрывает `reset:`, `reset_confirm:` и `reset_cancel`)
 
 ## Переменные окружения
 

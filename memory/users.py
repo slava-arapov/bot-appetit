@@ -87,3 +87,12 @@ def list_pending_users() -> list[dict]:
         for uid, entry in registry.items()
         if entry.get("status") == "pending"
     ]
+
+
+def count_users_by_status() -> dict:
+    counts = {"approved": 0, "pending": 0, "rejected": 0}
+    for entry in _load_registry().values():
+        status = entry.get("status")
+        if status in counts:
+            counts[status] += 1
+    return counts

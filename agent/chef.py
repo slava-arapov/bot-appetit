@@ -214,6 +214,12 @@ async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
     return reply, model_name
 
 
+def current_onboarding_question(user_id: int) -> str:
+    """Возвращает уже заданный, но ещё не отвеченный вопрос анкеты, не трогая profile."""
+    step = load_profile(user_id).get("onboarding_step", 0)
+    return ONBOARDING_QUESTIONS[max(step - 1, 0)]
+
+
 async def run_onboarding(user_id: int, user_message: str) -> str:
     profile = load_profile(user_id)
     step = profile.get("onboarding_step", 0)

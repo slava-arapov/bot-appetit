@@ -139,6 +139,32 @@ def check_expiring_soon(user_id: int) -> list[dict]:
     return soon
 
 
+def reset_context(user_id: int):
+    save_context(user_id, [])
+
+
+def reset_onboarding(user_id: int):
+    profile = load_profile(user_id)
+    profile["onboarding_done"] = False
+    profile["onboarding_step"] = 0
+    save_profile(user_id, profile)
+
+
+def reset_all(user_id: int):
+    save_profile(user_id, {
+        "likes": [],
+        "dislikes": [],
+        "restrictions": [],
+        "equipment": [],
+        "onboarding_done": False,
+        "onboarding_step": 0,
+        "current_context": {"notes": "", "updated": ""},
+    })
+    save_history(user_id, [])
+    save_context(user_id, [])
+    save_pantry(user_id, [])
+
+
 def apply_memory_update(user_id: int, update: dict):
     if not update:
         return

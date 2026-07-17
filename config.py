@@ -23,6 +23,7 @@ CONTEXT_WINDOW = 20
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 USERS_REGISTRY_PATH = os.path.join(DATA_DIR, "users.json")
+STATS_PATH = os.path.join(DATA_DIR, "stats.json")
 
 PROFILE_FILENAME = "profile.json"
 HISTORY_FILENAME = "history.json"
