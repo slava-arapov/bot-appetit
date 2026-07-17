@@ -33,6 +33,18 @@ def register_pending(user_id: int, username: str | None):
     _save_registry(registry)
 
 
+def ensure_approved(user_id: int, username: str | None = None):
+    registry = _load_registry()
+    entry = registry.get(str(user_id))
+    if entry and entry.get("status") == "approved":
+        return
+    entry = registry.setdefault(str(user_id), {})
+    entry["status"] = "approved"
+    entry.setdefault("username", username or "")
+    entry.setdefault("approved_at", str(date.today()))
+    _save_registry(registry)
+
+
 def approve_user(user_id: int):
     registry = _load_registry()
     entry = registry.setdefault(str(user_id), {})
@@ -66,3 +78,12 @@ def is_rejection_notified(user_id: int) -> bool:
 def list_approved_user_ids() -> list[int]:
     registry = _load_registry()
     return [int(uid) for uid, entry in registry.items() if entry.get("status") == "approved"]
+
+
+def list_pending_users() -> list[dict]:
+    registry = _load_registry()
+    return [
+        {"user_id": int(uid), **entry}
+        for uid, entry in registry.items()
+        if entry.get("status") == "pending"
+    ]

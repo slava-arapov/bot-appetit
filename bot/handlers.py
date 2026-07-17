@@ -6,7 +6,7 @@ from telegramify_markdown import markdownify
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
-from telegram.error import BadRequest, TimedOut
+from telegram.error import BadRequest, Forbidden, TimedOut
 
 from agent.chef import run_agent, run_onboarding
 from config import ADMIN_USER_ID
@@ -18,6 +18,9 @@ from memory.users import (
     reject_user,
     mark_rejection_notified,
     is_rejection_notified,
+    list_approved_user_ids,
+    list_pending_users,
+    ensure_approved,
 )
 
 logger = logging.getLogger(__name__)
@@ -48,6 +51,7 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 def _resolve_access(update: Update) -> str:
     user_id = update.effective_user.id
     if user_id == ADMIN_USER_ID:
+        ensure_approved(user_id, update.effective_user.username)
         return "approved"
     status = get_user_status(user_id)
     return status or "new"
@@ -176,3 +180,58 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
         await context.bot.send_message(chat_id=target_id, text="Доступ отклонён.")
 
     await query.answer()
+
+
+async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        return
+
+    pending = list_pending_users()
+    if not pending:
+        await _send(update, "Нет заявок на одобрение.")
+        return
+
+    for entry in pending:
+        name = f"@{entry['username']}" if entry.get("username") else str(entry["user_id"])
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton("✅ Одобрить", callback_data=f"approve:{entry['user_id']}"),
+            InlineKeyboardButton("❌ Отклонить", callback_data=f"reject:{entry['user_id']}"),
+        ]])
+        await update.message.reply_text(
+            f"{name} (id {entry['user_id']}), заявка от {entry.get('requested_at', '?')}",
+            reply_markup=keyboard,
+        )
+
+
+async def _send_to_chat(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> bool:
+    try:
+        await context.bot.send_message(chat_id=chat_id, text=markdownify(text), parse_mode=ParseMode.MARKDOWN_V2)
+        return True
+    except BadRequest:
+        try:
+            await context.bot.send_message(chat_id=chat_id, text=text)
+            return True
+        except (BadRequest, Forbidden, TimedOut):
+            return False
+    except (Forbidden, TimedOut):
+        return False
+
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != ADMIN_USER_ID:
+        return
+
+    parts = update.message.text.split(maxsplit=1)
+    if len(parts) < 2:
+        await _send(update, "Использование: /broadcast <текст>")
+        return
+
+    text = parts[1]
+    sent, failed = 0, 0
+    for user_id in list_approved_user_ids():
+        if await _send_to_chat(context, user_id, text):
+            sent += 1
+        else:
+            failed += 1
+
+    await _send(update, f"Разослано: {sent}, не доставлено: {failed}")
