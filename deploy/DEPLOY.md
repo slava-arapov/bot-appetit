@@ -26,23 +26,34 @@ python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Создай .env
+# Создай .env (бэкап по умолчанию в S3, см. раздел "2. Бэкап данных" про альтернативу через git)
 cat > .env << EOF
 TELEGRAM_TOKEN=...
 OPENROUTER_API_KEY=...
 ADMIN_USER_ID=...
-BACKUP_REPO_PATH=/home/botappetit/bot-appetit-data
+
+BACKUP_BACKEND=s3
+S3_BUCKET=...
+S3_PREFIX=bot-appetit
+S3_ENDPOINT_URL=        # только для S3-совместимых хранилищ не-AWS; пусто = обычный AWS S3
+AWS_ACCESS_KEY_ID=...
+AWS_SECRET_ACCESS_KEY=...
+AWS_DEFAULT_REGION=...
 EOF
 
-# Создай папку data/
+# Создай папку data/ — здесь будет жить data/bot.db (SQLite) и data/snapshots/ (локальные снапшоты перед отправкой в бэкап)
 mkdir -p data
 ```
 
 ### 2. Бэкап данных
 
-Репозиторий `bot-appetit-data` приватный — сначала нужен доступ по SSH (deploy key), HTTPS-clone без авторизации не сработает.
+Память бота — один файл SQLite (`data/bot.db`). `backup.py` ежедневно делает консистентный снапшот (`VACUUM INTO`), сжимает gzip'ом и отправляет в один из двух backend'ов, выбираемый переменной `BACKUP_BACKEND`.
 
-**Доступ VPS к приватному репо — SSH Deploy Key:**
+**Backend `s3` (по умолчанию)** — нужен S3-совместимый бакет и ключи доступа (`S3_BUCKET`, `S3_PREFIX`, стандартные `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_DEFAULT_REGION` в `.env`, использует `boto3`, который сам их подхватывает). Хранит последние `BACKUP_RETENTION_DAYS` (14) снапшотов, старые удаляет автоматически.
+
+Для не-AWS хранилища (S3-совместимые) обязательно укажи `S3_ENDPOINT_URL` — без него `boto3` пытается стучаться в настоящий AWS.
+
+**Backend `git` (опция)** — коммитит один и тот же файл `bot.db.gz` в приватный репозиторий на каждый бэкап (не накапливая историю бинарников списком файлов). Нужен `BACKUP_REPO_PATH` в `.env` и доступ VPS к приватному репо по SSH (deploy key), HTTPS-clone без авторизации не сработает:
 
 ```bash
 # Сгенерируй ключ от имени botappetit
@@ -68,6 +79,8 @@ git clone git@github.com:slava-arapov/bot-appetit-data.git ~/bot-appetit-data
 git config --global user.email "backup-bot@server"
 git config --global user.name "Bot Backup"
 ```
+
+И в `.env` вместо `BACKUP_BACKEND=s3` — `BACKUP_BACKEND=git` и `BACKUP_REPO_PATH=/home/botappetit/bot-appetit-data`.
 
 ### 3. Systemd-сервисы
 
@@ -147,6 +160,10 @@ push → GitHub Actions → SSH на VPS → git pull + pip install → systemct
 
 ## Перенос локальной папки data/ на VPS
 
+На новом деплое ничего переносить не нужно — `data/bot.db` создаётся автоматически при первом старте бота (применяется `memory/schema.sql`).
+
+Этот раздел — для одноразового переноса **уже существующей** легаси-папки `data/<user_id>/*.json` (со старой, JSON-based версии бота) на VPS, чтобы прогнать по ней `migrate_to_sqlite.py`.
+
 Прямого SSH-доступа к `botappetit` нет (только deploy key для CI/CD), поэтому копируем через админский аккаунт и переносим с правильным владельцем:
 
 ```bash
@@ -160,8 +177,16 @@ ssh YOUR_USER@YOUR_VPS_IP
 sudo mv ~/data /home/botappetit/bot-appetit/data
 sudo chown -R botappetit:botappetit /home/botappetit/bot-appetit/data
 
-# 4. Перезапусти бота, чтобы он подхватил данные
-sudo systemctl restart bot-appetit
+# 4. Прогони миграцию в SQLite (бот должен быть остановлен)
+sudo systemctl stop bot-appetit
+sudo su - botappetit
+cd ~/bot-appetit && source .venv/bin/activate && python migrate_to_sqlite.py
+# сверь числа в выводе с содержимым старых JSON, затем вручную удали
+# data/<user_id>/, data/users.json, data/stats.json — скрипт их не трогает
+exit
+
+# 5. Перезапусти бота, чтобы он подхватил bot.db
+sudo systemctl start bot-appetit
 ```
 
 ---

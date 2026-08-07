@@ -14,7 +14,14 @@ pip install -r requirements.txt
 TELEGRAM_TOKEN=...
 OPENROUTER_API_KEY=...
 ADMIN_USER_ID=...       # твой Telegram ID (узнать: @userinfobot)
-BACKUP_REPO_PATH=       # опционально: путь к локальному клону приватного репо
+
+# Бэкап (см. раздел "Бэкап памяти" ниже)
+BACKUP_BACKEND=s3       # s3 (по умолчанию) или git
+S3_BUCKET=...
+S3_PREFIX=bot-appetit
+S3_ENDPOINT_URL=        # только для S3-совместимых хранилищ не-AWS; пусто = обычный AWS S3
+# AWS-креды подхватывает boto3 сам: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION
+BACKUP_REPO_PATH=       # только если BACKUP_BACKEND=git — путь к локальному клону приватного репо
 ```
 
 ```bash
@@ -53,31 +60,30 @@ bot-appetit/
 │   ├── base.py          # абстрактный BaseLLMClient
 │   └── openrouter.py    # OpenRouterClient (openrouter пакет, нативный async)
 ├── memory/
-│   ├── store.py         # чтение/запись JSON-памяти пользователей
-│   └── users.py         # реестр доступа users.json (pending/approved/rejected)
+│   ├── db.py            # aiosqlite-соединение, применение schema.sql при старте
+│   ├── schema.sql        # схема SQLite (users, profiles, profile_tags, history, pantry_items, context_messages, stats)
+│   ├── store.py         # чтение/запись памяти пользователей (async, SQLite)
+│   ├── users.py         # реестр доступа (async, SQLite; pending/approved/rejected)
+│   └── stats.py         # счётчики вызовов команд (async, SQLite)
 ├── deploy/              # systemd unit-файлы
+├── docs/db-migration.md # дизайн-документ перехода с JSON на SQLite (rationale, decision log)
 ├── config.py            # конфиг из .env
 ├── main.py              # точка входа
-├── backup.py            # автопуш data/ в приватный git-репо (раз в сутки)
+├── migrate_to_sqlite.py # разовый скрипт миграции легаси JSON → SQLite
+├── backup.py            # ежедневный снапшот data/bot.db → S3 или git-репо
 └── data/                # память агента (в .gitignore)
-    ├── users.json       # реестр доступа всех пользователей
-    └── <user_id>/       # папка каждого пользователя
-        ├── profile.json # вкусы, ограничения, техника, онбординг
-        ├── history.json # история блюд с оценками
-        ├── context.json # последние 20 сообщений для LLM
-        └── pantry.json  # запасы продуктов (name, status, quantity, expiry_date)
+    ├── bot.db            # SQLite — вся память бота
+    └── snapshots/        # локальные снапшоты перед отправкой в бэкап
 ```
 
 ## Бэкап памяти
 
-Данные в `data/` не хранятся в этом репо. Для автоматического бэкапа:
+Вся память бота — один файл SQLite (`data/bot.db`). `backup.py` ежедневно в 03:00 делает консистентный снапшот (`VACUUM INTO`), сжимает gzip'ом и отправляет в один из двух backend'ов (`BACKUP_BACKEND` в `.env`):
 
-1. Создай приватный git-репозиторий
-2. Склонируй его локально
-3. Укажи путь в `BACKUP_REPO_PATH`
-4. Запусти `python backup.py` как отдельный процесс (или через systemd-сервис, см. ниже)
+- **`s3`** (по умолчанию) — нужен S3-бакет и AWS-креды, см. `.env`-блок выше. Хранит последние 14 снапшотов, старые удаляет сам.
+- **`git`** — коммитит и перезаписывает один файл `bot.db.gz` в приватном репозитории (`BACKUP_REPO_PATH`), без накопления истории бинарников.
 
-Бэкап запускается ежедневно в 03:00.
+Запусти `python backup.py` как отдельный процесс (или через systemd-сервис, см. ниже) — либо `python backup.py --now` для разового бэкапа прямо сейчас.
 
 ## Деплой на VPS
 
@@ -98,7 +104,7 @@ sudo systemctl start bot-appetit bot-appetit-backup
 | Сервис               | Что делает                                                                          |
 |----------------------|-------------------------------------------------------------------------------------|
 | `bot-appetit`        | Основной бот. Перезапускается автоматически при краше и при каждом деплое через CI. |
-| `bot-appetit-backup` | Фоновый процесс. Каждый день в 03:00 пушит `data/` в приватный git-репо.            |
+| `bot-appetit-backup` | Фоновый процесс. Каждый день в 03:00 делает снапшот `data/bot.db` и отправляет в S3 или git-репо (см. «Бэкап памяти»). |
 
 **Полезные команды:**
 

@@ -181,13 +181,13 @@ _MAX_RETRIES = 3
 
 
 async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
-    profile = load_profile(user_id)
-    history = load_history(user_id)
-    pantry = load_pantry(user_id)
+    profile = await load_profile(user_id)
+    history = await load_history(user_id)
+    pantry = await load_pantry(user_id)
 
     system = build_system_prompt(profile, history, pantry)
 
-    messages = load_context(user_id)
+    messages = await load_context(user_id)
     messages.append({"role": "user", "content": user_message})
 
     for attempt in range(1, _MAX_RETRIES + 1):
@@ -207,21 +207,22 @@ async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
             return "Что-то пошло не так, попробуй ещё раз.", None
 
     messages.append({"role": "assistant", "content": raw})
-    save_context(user_id, messages[-CONTEXT_WINDOW:])
+    await save_context(user_id, messages[-CONTEXT_WINDOW:])
 
-    apply_memory_update(user_id, memory_update)
+    await apply_memory_update(user_id, memory_update)
 
     return reply, model_name
 
 
-def current_onboarding_question(user_id: int) -> str:
+async def current_onboarding_question(user_id: int) -> str:
     """Возвращает уже заданный, но ещё не отвеченный вопрос анкеты, не трогая profile."""
-    step = load_profile(user_id).get("onboarding_step", 0)
+    profile = await load_profile(user_id)
+    step = profile.get("onboarding_step", 0)
     return ONBOARDING_QUESTIONS[max(step - 1, 0)]
 
 
 async def run_onboarding(user_id: int, user_message: str) -> str:
-    profile = load_profile(user_id)
+    profile = await load_profile(user_id)
     step = profile.get("onboarding_step", 0)
 
     # Сохранить ответ на текущий шаг (кроме первого приветствия)
@@ -238,12 +239,12 @@ async def run_onboarding(user_id: int, user_message: str) -> str:
     if step < len(ONBOARDING_QUESTIONS):
         question = ONBOARDING_QUESTIONS[step]
         profile["onboarding_step"] = step + 1
-        save_profile(user_id, profile)
+        await save_profile(user_id, profile)
         return question
     else:
         # Онбординг завершён
         profile["onboarding_done"] = True
-        save_profile(user_id, profile)
+        await save_profile(user_id, profile)
         return (
             "Отлично, я всё запомнил! 🎉\n\n"
             "Пиши в свободной форме: что есть дома, что хочется, сколько времени есть. "

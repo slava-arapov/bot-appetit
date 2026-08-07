@@ -1,16 +1,9 @@
-import json
-import os
 from datetime import date, timedelta
 
-from config import (
-    PROFILE_FILENAME,
-    HISTORY_FILENAME,
-    CONTEXT_FILENAME,
-    PANTRY_FILENAME,
-    CONTEXT_WINDOW,
-    DATA_DIR,
-    EXPIRY_WARNING_DAYS,
-)
+from config import EXPIRY_WARNING_DAYS
+from memory.db import get_conn
+
+_TAG_KINDS = ("likes", "dislikes", "restrictions", "equipment")
 
 DEFAULT_PROFILE = {
     "likes": [],
@@ -23,76 +16,143 @@ DEFAULT_PROFILE = {
 }
 
 
-def _user_dir(user_id: int) -> str:
-    return os.path.join(DATA_DIR, str(user_id))
+async def load_profile(user_id: int) -> dict:
+    conn = get_conn()
+    row = await (await conn.execute(
+        "SELECT * FROM profiles WHERE user_id = ?", (user_id,)
+    )).fetchone()
 
+    profile = dict(DEFAULT_PROFILE)
+    profile["current_context"] = dict(DEFAULT_PROFILE["current_context"])
+    if row:
+        profile["onboarding_done"] = bool(row["onboarding_done"])
+        profile["onboarding_step"] = row["onboarding_step"]
+        profile["current_context"] = {
+            "notes": row["current_context_notes"] or "",
+            "updated": row["current_context_updated"] or "",
+        }
+        if row["servings"]:
+            profile["servings"] = row["servings"]
+        if row["cooking_time"]:
+            profile["cooking_time"] = row["cooking_time"]
 
-def _user_path(user_id: int, filename: str) -> str:
-    return os.path.join(_user_dir(user_id), filename)
+    for kind in _TAG_KINDS:
+        cursor = await conn.execute(
+            "SELECT value FROM profile_tags WHERE user_id = ? AND kind = ? ORDER BY id",
+            (user_id, kind),
+        )
+        profile[kind] = [r["value"] for r in await cursor.fetchall()]
 
-
-def _ensure_user_dir(user_id: int):
-    os.makedirs(_user_dir(user_id), exist_ok=True)
-
-
-def _load_json(path: str, default):
-    if not os.path.exists(path):
-        return default
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
-
-
-def _save_json(user_id: int, path: str, data):
-    _ensure_user_dir(user_id)
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def load_profile(user_id: int) -> dict:
-    profile = _load_json(_user_path(user_id, PROFILE_FILENAME), {})
-    # Заполнить отсутствующие поля дефолтами
-    for key, value in DEFAULT_PROFILE.items():
-        if key not in profile:
-            profile[key] = value
     return profile
 
 
-def save_profile(user_id: int, data: dict):
-    _save_json(user_id, _user_path(user_id, PROFILE_FILENAME), data)
+async def save_profile(user_id: int, data: dict):
+    conn = get_conn()
+    context = data.get("current_context") or {}
+    await conn.execute(
+        """
+        INSERT INTO profiles (user_id, onboarding_done, onboarding_step, servings, cooking_time,
+                               current_context_notes, current_context_updated)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(user_id) DO UPDATE SET
+          onboarding_done = excluded.onboarding_done,
+          onboarding_step = excluded.onboarding_step,
+          servings = excluded.servings,
+          cooking_time = excluded.cooking_time,
+          current_context_notes = excluded.current_context_notes,
+          current_context_updated = excluded.current_context_updated
+        """,
+        (
+            user_id,
+            int(bool(data.get("onboarding_done"))),
+            data.get("onboarding_step", 0),
+            data.get("servings"),
+            data.get("cooking_time"),
+            context.get("notes"),
+            context.get("updated"),
+        ),
+    )
+
+    for kind in _TAG_KINDS:
+        await conn.execute("DELETE FROM profile_tags WHERE user_id = ? AND kind = ?", (user_id, kind))
+        values = data.get(kind, [])
+        if values:
+            await conn.executemany(
+                "INSERT INTO profile_tags (user_id, kind, value) VALUES (?, ?, ?)",
+                [(user_id, kind, v) for v in values],
+            )
+
+    await conn.commit()
 
 
-def load_history(user_id: int) -> list:
-    data = _load_json(_user_path(user_id, HISTORY_FILENAME), [])
-    return data if isinstance(data, list) else []
+async def load_history(user_id: int) -> list:
+    conn = get_conn()
+    cursor = await conn.execute(
+        "SELECT dish, rating, date FROM history WHERE user_id = ? ORDER BY id", (user_id,)
+    )
+    return [dict(r) for r in await cursor.fetchall()]
 
 
-def save_history(user_id: int, data: list):
-    _save_json(user_id, _user_path(user_id, HISTORY_FILENAME), data)
+async def save_history(user_id: int, data: list):
+    conn = get_conn()
+    await conn.execute("DELETE FROM history WHERE user_id = ?", (user_id,))
+    if data:
+        await conn.executemany(
+            "INSERT INTO history (user_id, dish, rating, date) VALUES (?, ?, ?, ?)",
+            [(user_id, e.get("dish"), e.get("rating"), e.get("date")) for e in data],
+        )
+    await conn.commit()
 
 
-def load_context(user_id: int) -> list:
-    return _load_json(_user_path(user_id, CONTEXT_FILENAME), [])
+async def load_context(user_id: int) -> list:
+    conn = get_conn()
+    cursor = await conn.execute(
+        "SELECT role, content FROM context_messages WHERE user_id = ? ORDER BY id", (user_id,)
+    )
+    return [dict(r) for r in await cursor.fetchall()]
 
 
-def save_context(user_id: int, data: list):
-    _save_json(user_id, _user_path(user_id, CONTEXT_FILENAME), data)
+async def save_context(user_id: int, data: list):
+    conn = get_conn()
+    await conn.execute("DELETE FROM context_messages WHERE user_id = ?", (user_id,))
+    if data:
+        await conn.executemany(
+            "INSERT INTO context_messages (user_id, role, content) VALUES (?, ?, ?)",
+            [(user_id, m.get("role"), m.get("content")) for m in data],
+        )
+    await conn.commit()
 
 
-def load_pantry(user_id: int) -> list:
-    data = _load_json(_user_path(user_id, PANTRY_FILENAME), [])
-    return data if isinstance(data, list) else []
+async def load_pantry(user_id: int) -> list:
+    conn = get_conn()
+    cursor = await conn.execute(
+        "SELECT name, status, added_date, expiry_date, quantity FROM pantry_items WHERE user_id = ? ORDER BY id",
+        (user_id,),
+    )
+    return [dict(r) for r in await cursor.fetchall()]
 
 
-def save_pantry(user_id: int, data: list):
-    _save_json(user_id, _user_path(user_id, PANTRY_FILENAME), data)
+async def save_pantry(user_id: int, data: list):
+    conn = get_conn()
+    await conn.execute("DELETE FROM pantry_items WHERE user_id = ?", (user_id,))
+    if data:
+        await conn.executemany(
+            "INSERT INTO pantry_items (user_id, name, status, added_date, expiry_date, quantity) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (user_id, i["name"], i.get("status", "have"), i.get("added_date"), i.get("expiry_date"), i.get("quantity"))
+                for i in data
+            ],
+        )
+    await conn.commit()
 
 
-def apply_pantry_update(user_id: int, items: list[dict]):
+async def apply_pantry_update(user_id: int, items: list[dict]):
     """Применяет частичные изменения запасов: добавление/обновление по name, удаление при status=out."""
     if not items:
         return
 
-    pantry = load_pantry(user_id)
+    pantry = await load_pantry(user_id)
     by_name = {item["name"]: item for item in pantry}
 
     for change in items:
@@ -115,16 +175,16 @@ def apply_pantry_update(user_id: int, items: list[dict]):
         if change.get("quantity"):
             existing["quantity"] = change["quantity"]
 
-    save_pantry(user_id, list(by_name.values()))
+    await save_pantry(user_id, list(by_name.values()))
 
 
-def check_expiring_soon(user_id: int) -> list[dict]:
+async def check_expiring_soon(user_id: int) -> list[dict]:
     """Возвращает записи pantry с expiry_date в пределах EXPIRY_WARNING_DAYS, отсортированные по дате."""
     today = date.today()
     cutoff = today + timedelta(days=EXPIRY_WARNING_DAYS)
 
     soon = []
-    for item in load_pantry(user_id):
+    for item in await load_pantry(user_id):
         expiry_str = item.get("expiry_date")
         if not expiry_str:
             continue
@@ -139,19 +199,19 @@ def check_expiring_soon(user_id: int) -> list[dict]:
     return soon
 
 
-def reset_context(user_id: int):
-    save_context(user_id, [])
+async def reset_context(user_id: int):
+    await save_context(user_id, [])
 
 
-def reset_onboarding(user_id: int):
-    profile = load_profile(user_id)
+async def reset_onboarding(user_id: int):
+    profile = await load_profile(user_id)
     profile["onboarding_done"] = False
     profile["onboarding_step"] = 0
-    save_profile(user_id, profile)
+    await save_profile(user_id, profile)
 
 
-def reset_all(user_id: int):
-    save_profile(user_id, {
+async def reset_all(user_id: int):
+    await save_profile(user_id, {
         "likes": [],
         "dislikes": [],
         "restrictions": [],
@@ -160,19 +220,19 @@ def reset_all(user_id: int):
         "onboarding_step": 0,
         "current_context": {"notes": "", "updated": ""},
     })
-    save_history(user_id, [])
-    save_context(user_id, [])
-    save_pantry(user_id, [])
+    await save_history(user_id, [])
+    await save_context(user_id, [])
+    await save_pantry(user_id, [])
 
 
-def apply_memory_update(user_id: int, update: dict):
+async def apply_memory_update(user_id: int, update: dict):
     if not update:
         return
 
-    profile = load_profile(user_id)
-    history = load_history(user_id)
+    profile = await load_profile(user_id)
+    history = await load_history(user_id)
 
-    for field in ("likes", "dislikes", "restrictions", "equipment"):
+    for field in _TAG_KINDS:
         if not isinstance(profile[field], list):
             profile[field] = []
         new_items = update.get(field, [])
@@ -200,8 +260,8 @@ def apply_memory_update(user_id: int, update: dict):
                     history.append(entry)
                     changed = True
             if changed:
-                save_history(user_id, history)
+                await save_history(user_id, history)
 
-    apply_pantry_update(user_id, update.get("pantry", []))
+    await apply_pantry_update(user_id, update.get("pantry", []))
 
-    save_profile(user_id, profile)
+    await save_profile(user_id, profile)

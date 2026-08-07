@@ -17,8 +17,8 @@ def _format_date(iso_date: str) -> str:
 
 
 async def notify_expiring(context: ContextTypes.DEFAULT_TYPE):
-    for user_id in list_approved_user_ids():
-        expiring = check_expiring_soon(user_id)
+    for user_id in await list_approved_user_ids():
+        expiring = await check_expiring_soon(user_id)
         if not expiring:
             continue
 

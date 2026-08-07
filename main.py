@@ -21,6 +21,7 @@ from bot.handlers import (
     reset_command,
 )
 from bot.jobs import notify_expiring
+from memory.db import init_db, close_db
 from memory.stats import record_command
 
 logging.basicConfig(
@@ -47,12 +48,13 @@ ADMIN_COMMANDS = DEFAULT_COMMANDS + [
 def _tracked(name: str, handler):
     """Оборачивает командный хендлер, инкрементируя счётчик вызовов в data/stats.json."""
     async def wrapper(update, context):
-        record_command(name)
+        await record_command(name)
         await handler(update, context)
     return wrapper
 
 
 async def _post_init(app: Application):
+    await init_db()
     await app.bot.set_my_commands(DEFAULT_COMMANDS)
     await app.bot.set_my_commands(
         ADMIN_COMMANDS,
@@ -60,8 +62,18 @@ async def _post_init(app: Application):
     )
 
 
+async def _post_shutdown(app: Application):
+    await close_db()
+
+
 def main():
-    app = Application.builder().token(TELEGRAM_TOKEN).post_init(_post_init).build()
+    app = (
+        Application.builder()
+        .token(TELEGRAM_TOKEN)
+        .post_init(_post_init)
+        .post_shutdown(_post_shutdown)
+        .build()
+    )
     app.add_handler(CommandHandler("start", _tracked("start", start)))
     app.add_handler(CommandHandler("cook", _tracked("cook", cook_command)))
     app.add_handler(CommandHandler("random", _tracked("random", random_command)))

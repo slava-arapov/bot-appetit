@@ -59,12 +59,12 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.error("Необработанное исключение", exc_info=context.error)
 
 
-def _resolve_access(update: Update) -> str:
+async def _resolve_access(update: Update) -> str:
     user_id = update.effective_user.id
     if user_id == ADMIN_USER_ID:
-        ensure_approved(user_id, update.effective_user.username)
+        await ensure_approved(user_id, update.effective_user.username)
         return "approved"
-    status = get_user_status(user_id)
+    status = await get_user_status(user_id)
     return status or "new"
 
 
@@ -104,11 +104,11 @@ async def _with_typing(update: Update, context: ContextTypes.DEFAULT_TYPE, coro)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    access = _resolve_access(update)
+    access = await _resolve_access(update)
     user_id = update.effective_user.id
 
     if access == "new":
-        register_pending(user_id, update.effective_user.username)
+        await register_pending(user_id, update.effective_user.username)
         await _notify_admin_new_request(update, context)
         await _send(update, "Заявка отправлена, жди одобрения 👀")
         return
@@ -116,44 +116,44 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await _send(update, "Заявка ещё не одобрена, подожди немного 👀")
         return
     if access == "rejected":
-        if not is_rejection_notified(user_id):
-            mark_rejection_notified(user_id)
+        if not await is_rejection_notified(user_id):
+            await mark_rejection_notified(user_id)
             await _send(update, "Доступ отклонён.")
         return
 
-    profile = load_profile(user_id)
+    profile = await load_profile(user_id)
     if not profile.get("onboarding_done"):
         reply = await _show_onboarding_question(update, context, user_id)
     else:
-        reset_context(user_id)
+        await reset_context(user_id)
         reply = "Привет! Начинаем с чистого листа — что приготовим?"
     await _send(update, reply)
 
 
 async def _require_approved(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
     """Обрабатывает new/pending/rejected сама, возвращает True только для approved."""
-    access = _resolve_access(update)
+    access = await _resolve_access(update)
     user_id = update.effective_user.id
 
     if access == "approved":
         return True
     if access == "new":
-        register_pending(user_id, update.effective_user.username)
+        await register_pending(user_id, update.effective_user.username)
         await _notify_admin_new_request(update, context)
         await _send(update, "Заявка отправлена, жди одобрения 👀")
-    elif access == "rejected":
-        if not is_rejection_notified(user_id):
-            mark_rejection_notified(user_id)
-            await _send(update, "Доступ отклонён.")
+    elif access == "rejected" and not await is_rejection_notified(user_id):
+        await mark_rejection_notified(user_id)
+        await _send(update, "Доступ отклонён.")
     # pending: молчим, чтобы не спамить повторными заявками
     return False
 
 
 async def _show_onboarding_question(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
     """Показывает текущий вопрос анкеты, не отвечая на него автоматически."""
-    if load_profile(user_id).get("onboarding_step", 0) == 0:
+    profile = await load_profile(user_id)
+    if profile.get("onboarding_step", 0) == 0:
         return await _with_typing(update, context, run_onboarding(user_id, ""))
-    return current_onboarding_question(user_id)
+    return await current_onboarding_question(user_id)
 
 
 async def _require_onboarded(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -167,7 +167,8 @@ async def _require_onboarded(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return False
 
     user_id = update.effective_user.id
-    if load_profile(user_id).get("onboarding_done"):
+    profile = await load_profile(user_id)
+    if profile.get("onboarding_done"):
         return True
 
     question = await _show_onboarding_question(update, context, user_id)
@@ -177,7 +178,7 @@ async def _require_onboarded(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 async def _run_agent_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str):
     user_id = update.effective_user.id
-    profile = load_profile(user_id)
+    profile = await load_profile(user_id)
 
     if not profile.get("onboarding_done"):
         reply = await _with_typing(update, context, run_onboarding(user_id, user_text))
@@ -238,7 +239,7 @@ def _format_pantry_list(pantry: list[dict]) -> str:
 async def pantry_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_onboarded(update, context):
         return
-    pantry = load_pantry(update.effective_user.id)
+    pantry = await load_pantry(update.effective_user.id)
     await _send(update, _format_pantry_list(pantry))
 
 
@@ -262,12 +263,12 @@ def _format_profile(profile: dict) -> str:
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_onboarded(update, context):
         return
-    profile = load_profile(update.effective_user.id)
+    profile = await load_profile(update.effective_user.id)
     await _send(update, _format_profile(profile))
 
 
-def _do_reset_chat(user_id: int) -> str:
-    reset_context(user_id)
+async def _do_reset_chat(user_id: int) -> str:
+    await reset_context(user_id)
     return "Переписка забыта, начинаем с чистого листа 🧹"
 
 
@@ -325,14 +326,14 @@ async def handle_reset_callback(update: Update, context: ContextTypes.DEFAULT_TY
         restart = _RESTART_ONBOARDING_ACTIONS.get(action)
         if restart:
             reset_fn, text = restart
-            reset_fn(user_id)
+            await reset_fn(user_id)
             await query.edit_message_text(text)
             question = await run_onboarding(user_id, "")
             await _send_to_chat(context, query.message.chat_id, question)
         else:
             handler = _RESET_ACTIONS.get(action)
             if handler:
-                await query.edit_message_text(handler(user_id))
+                await query.edit_message_text(await handler(user_id))
         await query.answer()
         return
 
@@ -342,7 +343,7 @@ async def handle_reset_callback(update: Update, context: ContextTypes.DEFAULT_TY
     else:
         handler = _RESET_ACTIONS.get(action)
         if handler:
-            await query.edit_message_text(handler(query.from_user.id))
+            await query.edit_message_text(await handler(query.from_user.id))
     await query.answer()
 
 
@@ -356,11 +357,11 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
     target_id = int(target_id_str)
 
     if action == "approve":
-        approve_user(target_id)
+        await approve_user(target_id)
         await query.edit_message_text(query.message.text + "\n\n✅ Одобрено")
         await context.bot.send_message(chat_id=target_id, text="Доступ открыт! Погнали 🍳")
 
-        profile = load_profile(target_id)
+        profile = await load_profile(target_id)
         if not profile.get("onboarding_done"):
             reply = await run_onboarding(target_id, "")
             try:
@@ -370,8 +371,8 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
             except BadRequest:
                 await context.bot.send_message(chat_id=target_id, text=reply)
     else:
-        reject_user(target_id)
-        mark_rejection_notified(target_id)
+        await reject_user(target_id)
+        await mark_rejection_notified(target_id)
         await query.edit_message_text(query.message.text + "\n\n❌ Отклонено")
         await context.bot.send_message(chat_id=target_id, text="Доступ отклонён.")
 
@@ -382,7 +383,7 @@ async def pending_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_USER_ID:
         return
 
-    pending = list_pending_users()
+    pending = await list_pending_users()
     if not pending:
         await _send(update, "Нет заявок на одобрение.")
         return
@@ -403,7 +404,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_USER_ID:
         return
 
-    counts = count_users_by_status()
+    counts = await count_users_by_status()
     lines = [
         "👥 Пользователи:",
         f"- одобрены: {counts['approved']}",
@@ -413,7 +414,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📊 Команды:",
     ]
 
-    stats = get_stats()
+    stats = await get_stats()
     if stats:
         lines += [f"- /{name}: {count}" for name, count in sorted(stats.items(), key=lambda kv: kv[1], reverse=True)]
     else:
@@ -469,7 +470,7 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     mv2_text = mv2_parts[1] if len(mv2_parts) > 1 else plain_text
 
     sent, failed = 0, 0
-    for user_id in list_approved_user_ids():
+    for user_id in await list_approved_user_ids():
         if await _send_preformatted_to_chat(context, user_id, mv2_text, plain_text):
             sent += 1
         else:

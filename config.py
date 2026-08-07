@@ -6,7 +6,13 @@ load_dotenv()
 TELEGRAM_TOKEN = os.environ["TELEGRAM_TOKEN"]
 OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 ADMIN_USER_ID = int(os.environ["ADMIN_USER_ID"])
+
+BACKUP_BACKEND = os.environ.get("BACKUP_BACKEND", "s3")  # "s3" | "git"
 BACKUP_REPO_PATH = os.environ.get("BACKUP_REPO_PATH", "")
+S3_BUCKET = os.environ.get("S3_BUCKET", "")
+S3_PREFIX = os.environ.get("S3_PREFIX", "bot-appetit")
+S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "")  # для S3-совместимых хранилищ (не AWS)
+BACKUP_RETENTION_DAYS = 14
 
 LLM_PROVIDER = "openrouter"
 LLM_MODELS = [
@@ -22,12 +28,8 @@ LLM_MODELS = [
 CONTEXT_WINDOW = 20
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-USERS_REGISTRY_PATH = os.path.join(DATA_DIR, "users.json")
-STATS_PATH = os.path.join(DATA_DIR, "stats.json")
-
-PROFILE_FILENAME = "profile.json"
-HISTORY_FILENAME = "history.json"
-CONTEXT_FILENAME = "context.json"
-PANTRY_FILENAME = "pantry.json"
+DB_PATH = os.path.join(DATA_DIR, "bot.db")
+SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "memory", "schema.sql")
+SNAPSHOT_DIR = os.path.join(DATA_DIR, "snapshots")
 
 EXPIRY_WARNING_DAYS = 2
