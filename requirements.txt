@@ -5,3 +5,5 @@ schedule
 telegramify-markdown==1.1.1
 aiosqlite
 boto3
+fastapi
+uvicorn

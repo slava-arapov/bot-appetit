@@ -7,6 +7,7 @@
 - `openrouter` Python-пакет — нативный async-клиент для OpenRouter
 - `telegramify-markdown` — конвертирует произвольный markdown в валидный MarkdownV2 для Telegram
 - SQLite (`aiosqlite`) — вся память бота, один файл `data/bot.db`
+- Mini App: FastAPI (`webapp_api/`, внутри процесса бота) + Vue 3/TypeScript/Vite (`webapp/`)
 - Секреты через `.env` + `python-dotenv`
 
 ## Архитектура
@@ -46,6 +47,16 @@ user message
 
 Ежедневно в 09:00 `bot/jobs.py:notify_expiring` проходит по всем `approved`-пользователям (`memory/users.py:list_approved_user_ids()`) и для каждого проверяет его запасы (`memory/store.py:check_expiring_soon`) на продукты с `expiry_date` в пределах `EXPIRY_WARNING_DAYS` (см. `config.py`) — детерминированно, без вызова LLM. Регистрируется через `app.job_queue.run_daily(...)` в `main.py` (нужен extra `python-telegram-bot[job-queue]`).
 
+### Mini App: API и dev-окружение
+
+Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). Реализован каркас без экранов; бизнес-эндпоинты (pantry/profile/settings) ещё не написаны.
+
+- `webapp_api/` — FastAPI в том же event loop, что и бот: `server.py:start_api()/stop_api()` (uvicorn без перехвата сигналов, при ошибке старта — `RuntimeError`) вызываются из `main.py:_post_init/_post_shutdown`. Использует общее соединение `memory/db.py:get_conn()`. Отключить нельзя — API стартует вместе с ботом.
+- Авторизация одна и без dev-обходов: `webapp_api/deps.py:current_user` читает `Authorization: tma <initData>`, `auth.py:validate_init_data` проверяет HMAC-подпись и `auth_date` (`INITDATA_MAX_AGE`), затем статус `approved` в `users` (401 — плохой initData, 403 — нет доступа).
+- `webapp/`: `src/telegram/` — обёртка над `Telegram.WebApp` (тема → CSS-переменные `--tg-*`, `viewportStableHeight`) и `mock.ts` для браузера (только dev, в prod-бандл не попадает; активируется при пустом `initData`); `src/api/client.ts` — `apiFetch` с заголовком `tma`.
+- Dev: Vite-плагин `webapp/dev/init-data-plugin.ts` отдаёт свежий подписанный `initData` на `/__dev/init-data` (токен и `ADMIN_USER_ID` из `../.env`; только `vite serve`). Прокси `/api` → `127.0.0.1:8080`. Подпись в TS и проверка в Python — независимые реализации алгоритма Telegram, они проверяют друг друга.
+- Тесты: `pytest` (корень, `tests/`, нужен `requirements-dev.txt`), `npm test` / `npm run lint` / `npm run build` в `webapp/`.
+
 ### Бэкап памяти
 
 `backup.py` — отдельный процесс (свой systemd-сервис), не часть основного бота. Ежедневно в 03:00: `VACUUM INTO` консистентный снапшот `data/bot.db` → gzip → отправка в backend, выбираемый `BACKUP_BACKEND`:
@@ -80,6 +91,9 @@ user message
 - `openrouter` пакет имеет нативный async (`send_async`), `asyncio.to_thread()` не нужен.
 - Пока LLM думает, хендлер периодически отправляет `ChatAction.TYPING` (`_with_typing` в `bot/handlers.py`).
 - Для S3-совместимых хранилищ не-AWS (`S3_ENDPOINT_URL` задан) в `backup.py:_backup_s3()` дополнительно отключены дефолтные контрольные суммы запроса/ответа boto3 (`request_checksum_calculation`/`response_checksum_validation` = `when_required`) — иначе `PutObject` падает с `XAmzContentSHA256Mismatch`, это расширение сторонние провайдеры не поддерживают.
+- Mini App, фронтенд: вне Telegram `telegram-web-app.js` всё равно создаёт `Telegram.WebApp` с пустым `initData`, поэтому mock (`webapp/src/telegram/mock.ts`) включается по пустому `initData`, а не по отсутствию объекта.
+- Mini App, доступ: админ становится `approved` лениво, при первом сообщении боту (`ensure_approved`). Пока таблица `users` пуста, `/api/me` отдаёт 403 — сначала напиши тестовому боту.
+- Mini App, dev-сервер: Vite привязан к `127.0.0.1` (`webapp/vite.config.ts`); API стартует вместе с ботом без флага, поэтому порт `API_PORT` (8080) на машине должен быть свободен, иначе бот падает при старте с `RuntimeError`.
 
 ## Онбординг
 
@@ -136,3 +150,5 @@ user message
 | `S3_BUCKET`, `S3_PREFIX` | нужны при `BACKUP_BACKEND=s3`; AWS-креды — стандартные `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`/`AWS_DEFAULT_REGION`, их подхватывает `boto3` |
 | `S3_ENDPOINT_URL` | нужен для S3-совместимых хранилищ не-AWS — без него `boto3` идёт на настоящий AWS. Пустой = обычный AWS S3 |
 | `BACKUP_REPO_PATH` | нужен при `BACKUP_BACKEND=git` — путь к локальному клону приватного репо |
+| `API_HOST`, `API_PORT` | где слушает API Mini App (по умолчанию `127.0.0.1:8080`) |
+| `INITDATA_MAX_AGE` | сколько секунд `initData` считается свежим (по умолчанию 86400) |

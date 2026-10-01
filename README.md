@@ -28,6 +28,26 @@ BACKUP_REPO_PATH=       # только если BACKUP_BACKEND=git — путь 
 python main.py
 ```
 
+## Mini App (разработка)
+
+Фронтенд Telegram Mini App живёт в `webapp/` (Vue 3 + TypeScript + Vite), API — в `webapp_api/` (FastAPI, поднимается внутри процесса бота вместе с ним). Дизайн — `docs/telegram-mini-app.md` и `docs/telegram-mini-app-dev-env.md`.
+
+```bash
+pip install -r requirements.txt -r requirements-dev.txt
+cd webapp && npm install
+```
+
+Запуск — два терминала:
+
+```bash
+python main.py                  # бот + API на 127.0.0.1:8080 (Swagger: /docs)
+cd webapp && npm run dev        # фронтенд на http://localhost:5173
+```
+
+Открой `http://localhost:5173` в обычном браузере — вне Telegram работает mock `Telegram.WebApp` (тёмная тема: `?theme=dark`). `initData` подписывает сам dev-сервер Vite токеном из `.env`, вручную ничего генерировать не нужно. Пользователь должен быть `approved`: админ регистрируется при первом сообщении боту.
+
+Проверки: `pytest` (корень), `npm test`, `npm run lint`, `npm run build` (в `webapp/`).
+
 ## Команды
 
 | Команда    | Описание                                               |
@@ -65,6 +85,9 @@ bot-appetit/
 │   ├── store.py         # чтение/запись памяти пользователей (async, SQLite)
 │   ├── users.py         # реестр доступа (async, SQLite; pending/approved/rejected)
 │   └── stats.py         # счётчики вызовов команд (async, SQLite)
+├── webapp_api/          # HTTP API для Mini App (FastAPI): проверка initData, роуты
+├── webapp/              # фронтенд Mini App (Vue 3 + TS + Vite)
+├── tests/               # pytest (проверка initData, API, запуск сервера)
 ├── deploy/              # systemd unit-файлы
 ├── docs/db-migration.md # дизайн-документ перехода с JSON на SQLite (rationale, decision log)
 ├── config.py            # конфиг из .env

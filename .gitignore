@@ -20,3 +20,7 @@ __pycache__/
 *.pyo
 .DS_Store
 .claude/settings.local.json
+
+# Mini App
+webapp/node_modules/
+webapp/dist/

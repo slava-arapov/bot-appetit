@@ -4,7 +4,7 @@ import logging
 from telegram import BotCommand, BotCommandScopeChat
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
-from config import ADMIN_USER_ID, TELEGRAM_TOKEN
+from config import ADMIN_USER_ID, API_HOST, API_PORT, TELEGRAM_TOKEN
 from bot.handlers import (
     start,
     handle_message,
@@ -23,6 +23,7 @@ from bot.handlers import (
 from bot.jobs import notify_expiring
 from memory.db import init_db, close_db
 from memory.stats import record_command
+from webapp_api.server import start_api, stop_api
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
@@ -55,6 +56,7 @@ def _tracked(name: str, handler):
 
 async def _post_init(app: Application):
     await init_db()
+    app.bot_data["api"] = await start_api(API_HOST, API_PORT)
     await app.bot.set_my_commands(DEFAULT_COMMANDS)
     await app.bot.set_my_commands(
         ADMIN_COMMANDS,
@@ -63,6 +65,9 @@ async def _post_init(app: Application):
 
 
 async def _post_shutdown(app: Application):
+    api = app.bot_data.pop("api", None)
+    if api:
+        await stop_api(*api)
     await close_db()
 
 

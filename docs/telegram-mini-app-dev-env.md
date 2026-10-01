@@ -1,0 +1,77 @@
+# Локальное окружение для разработки Telegram Mini App
+
+Дизайн-документ. Зафиксирован по итогам обсуждения 2026-10-01. Дополняет `docs/telegram-mini-app.md` (сам Mini App) — здесь только каркас окружения, без экранов. Реализация — отдельным шагом.
+
+## Понимание задачи
+
+- Что делаем: каркас для разработки Mini App — фронтенд `webapp/`, HTTP API внутри процесса бота, авторизация по `initData`, dev-режим в обычном браузере.
+- Зачем: на этом каркасе дальше строятся Pantry / Профиль / Настройки по `docs/telegram-mini-app.md`.
+- Для кого: разработчик (один человек, фронтенд-бэкграунд, Python знает слабо).
+- Не делаем сейчас: экраны, бизнес-эндпоинты (pantry/profile/settings), туннель и проверку внутри Telegram, деплой, HTTPS, раздачу статики с прода, историю блюд.
+- Изоляция: локально работает отдельный тестовый бот (свой токен) и отдельная `data/bot.db`; прод на VPS не затрагивается.
+
+## Допущения
+
+1. Нагрузка небольшая (десятки пользователей), под масштаб не проектируем.
+2. Менеджер пакетов — npm (Node v24).
+3. Порты: API `127.0.0.1:8080`, Vite `5173`; API-порт и хост переопределяются через `.env`.
+4. Окно валидности `auth_date` — 24 ч (`INITDATA_MAX_AGE`); в dev подпись свежая на каждую загрузку страницы.
+5. В dev эмулируется только админ (`ADMIN_USER_ID`).
+6. API слушает только локальный интерфейс; наружу — через reverse proxy на этапе деплоя (вне рамок).
+7. Тестов в проекте сейчас нет — вводим минимум для нового кода.
+8. Проверка совместимости fastapi/uvicorn/pydantic с Python 3.14 — первым шагом при установке.
+
+## Decision Log
+
+| Решение | Альтернативы | Почему |
+|---|---|---|
+| Проверка только в браузере с mock, Telegram через туннель — позже | Всё всегда через туннель | Быстрые итерации, туннель нужен редко; тестовый бот уже изолирован от прода |
+| API в том же процессе, что и бот | Отдельный процесс/сервис | Общее соединение `aiosqlite`, нет гонок записи, один systemd-сервис; нагрузка мала |
+| FastAPI (uvicorn в том же event loop), а не aiohttp | aiohttp; отдельный процесс | aiohttp в зависимостях всё равно не было (PTB использует httpx), т.е. новая зависимость в любом случае; pydantic-модели ≈ TS-интерфейсы, автодокументация `/docs`, авторизация одной зависимостью `Depends`, возможна генерация TS-типов |
+| Валидация `initData` одна, без dev-обхода | Флаг `DEV_AUTH_USER_ID` | Нет риска, что обход включится на проде |
+| `initData` для dev подписывает Vite dev-сервер (плагин, эндпоинт `/__dev/init-data`) | Python-скрипт + `.env.local`; запуск из бота при старте | Нет ручных шагов и срока годности; токен остаётся в Node-процессе; независимая реализация подписи (TS) проверяет Python-валидацию; в prod-сборку плагин не попадает |
+| Монорепо, папка `webapp/` | Отдельный репозиторий | API и фронт меняются вместе |
+| Два терминала: `python main.py` + `npm run dev`, прокси `/api` в Vite | Один скрипт `dev:all` | Нет лишней зависимости ради экономии терминала; нет CORS |
+| API включается вместе с ботом, без флага | Флаг `ENABLE_WEBAPP_API` | Решение пользователя; проще конфигурация |
+| Состояние во view локально, без Pinia | Pinia сразу | YAGNI, добавим при появлении общего кеша |
+| ESLint (Vue + TS стандартный) + Prettier, Vitest | — | Стандартный набор |
+
+## Финальный дизайн
+
+### Backend (`webapp_api/`)
+
+- `main.py` — `create_app()`: `FastAPI()` с подключённым роутером.
+- `server.py` — `start_api()` / `stop_api()`: `uvicorn.Server` запускается задачей в том же event loop, что и PTB; перехват сигналов у uvicorn отключён (`capture_signals` — no-op), чтобы не мешать остановке бота. `sys.exit` uvicorn при ошибке старта превращается в `RuntimeError`.
+- `auth.py` — `validate_init_data()`: проверяет HMAC (секрет = `HMAC_SHA256("WebAppData", TELEGRAM_TOKEN)`, подпись от отсортированных `key=value`), `auth_date` не старше `INITDATA_MAX_AGE`, наличие `user`; иначе `InitDataError`.
+- `deps.py` — зависимость `current_user`: читает `Authorization: tma <initData>`, вызывает `validate_init_data`, проверяет статус `approved` в `users`. Иначе 401 (плохой/просроченный initData) или 403 (нет доступа).
+- `routes.py` — пока только `GET /api/me` → `{user_id, username}`: проверка сквозной цепочки.
+- Интеграция: старт в `main.py:_post_init` после `init_db()`, остановка в `_post_shutdown`; общее соединение — `memory/db.py:get_conn()`. Если порт занят — бот падает при старте.
+- Конфиг (`config.py`): `API_HOST`, `API_PORT`, `INITDATA_MAX_AGE`.
+
+### Frontend (`webapp/`)
+
+- Vite + Vue 3 (`<script setup>`) + TypeScript + Vue Router (`/`, `/pantry`, `/profile`, `/settings` — заглушки) + Vitest + ESLint + Prettier.
+- `src/telegram/index.ts` — обёртка над `Telegram.WebApp`: `ready()`, `themeParams` → CSS-переменные, `themeChanged`, `viewportStableHeight`.
+- `src/telegram/mock.ts` — если вне Telegram и `import.meta.env.DEV`: создаёт `window.Telegram.WebApp` с `initData` (запрашивается у `/__dev/init-data`), тестовыми `themeParams` (с переключателем light/dark), заглушками `BackButton`/`MainButton`/`HapticFeedback`. В prod-сборку не попадает.
+- `src/api/client.ts` — `fetch('/api/...')` с `Authorization: tma <initData>`.
+- `vite.config.ts` — прокси `/api` → `http://127.0.0.1:8080`; Vite слушает `127.0.0.1` (на `::1` по умолчанию соединения блокировались).
+- `dev/init-data-plugin.ts` — dev-плагин `/__dev/init-data`: читает `../.env`, подписывает свежий `initData` через `node:crypto` для `ADMIN_USER_ID`; только `vite serve`.
+- Хаб при открытии вызывает `/api/me` и показывает user_id — признак, что подпись, прокси и авторизация работают вместе.
+
+### Зависимости и репозиторий
+
+- `requirements.txt`: `fastapi`, `uvicorn`. `requirements-dev.txt`: `pytest`, `pytest-asyncio`, `httpx`.
+- `.gitignore`: `webapp/node_modules/`, `webapp/dist/`.
+- Запуск: `pip install -r requirements.txt -r requirements-dev.txt`; `cd webapp && npm install`; терминал 1 — `python main.py`; терминал 2 — `cd webapp && npm run dev`; открыть `http://localhost:5173`.
+- Обновить README / CLAUDE.md (архитектура, переменные окружения, запуск).
+
+### Тесты
+
+- pytest: валидная подпись проходит; неверный hash, протухший `auth_date`, пользователь не `approved` → 401/403; `/api/me` возвращает нужного пользователя; запуск/остановка сервера и занятый порт. Подпись в тестах строится независимой реализацией алгоритма — теста на готовом векторе из документации Telegram нет (достоверного вектора не было). Реальная проверка — `initData`, подписанный Node-плагином, принимается Python-валидацией (проверено вручную), плюс проверка в самом Telegram на этапе туннеля.
+- Vitest: `themeParams` → CSS-переменные; mock подставляется только в dev.
+
+### Риски
+
+- Совместимость пакетов с Python 3.14 — проверяется при установке.
+- Расхождение алгоритма подписи с Telegram — закрывается тестом на примере из документации и перекрёстной проверкой TS-подписи Python-валидацией.
+- Запуск uvicorn внутри event loop PTB — аккуратная обработка сигналов и остановки.

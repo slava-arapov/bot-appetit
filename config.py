@@ -33,3 +33,7 @@ SCHEMA_PATH = os.path.join(os.path.dirname(__file__), "memory", "schema.sql")
 SNAPSHOT_DIR = os.path.join(DATA_DIR, "snapshots")
 
 EXPIRY_WARNING_DAYS = 2
+
+API_HOST = os.environ.get("API_HOST", "127.0.0.1")
+API_PORT = int(os.environ.get("API_PORT", "8080"))
+INITDATA_MAX_AGE = int(os.environ.get("INITDATA_MAX_AGE", "86400"))  # секунды
