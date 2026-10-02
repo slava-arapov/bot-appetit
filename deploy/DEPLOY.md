@@ -152,13 +152,74 @@ cat ~/.ssh/deploy_key
 
 ## Как работает CI/CD
 
-Каждый `git push` в `main`:
+Каждый `git push` в `main` (`.github/workflows/deploy.yml`):
 
 ```
-push → GitHub Actions → SSH на VPS → git pull + pip install → systemctl restart bot-appetit
+job test:   pytest · npm ci · lint · npm test · npm run build → артефакт webapp/dist
+job deploy: (только если test зелёный)
+            scp dist → ~/webapp-upload на VPS
+            SSH: git pull + pip install + rsync ~/webapp-upload → /var/www/botappetit + systemctl restart bot-appetit
 ```
 
-Деплой занимает ~20 секунд. Данные в `data/` не трогаются.
+Тесты идут до выкладки: сломанный бэкенд или фронт на прод не уедет. Данные в `data/` деплой не трогает.
+Миграции данных (`migrate_*.py`) в деплой не входят, их запускают вручную с проверкой отчёта.
+
+Статика едет в две ступени (сначала в домашнюю директорию, потом в `/var/www`), чтобы nginx не заходил в `/home` и не получал доступ к `.env` и `data/`.
+
+---
+
+## Mini App: nginx и сертификат
+
+Mini App открывается в Telegram только по HTTPS. API бота слушает `127.0.0.1:8080` и наружу не торчит, поэтому нужен обратный прокси: статику отдаёт nginx, `/api/` проксируется на бота. Домен — `botappetit.goida.root.sx`.
+
+```bash
+# 1. DNS: A-запись botappetit.goida.root.sx -> IP VPS (если нет wildcard-записи). Проверка:
+dig +short botappetit.goida.root.sx
+
+# 2. Каталог для статики. Владелец — SSH-пользователь деплоя, чтобы rsync из CI писал без sudo
+sudo mkdir -p /var/www/botappetit
+sudo chown botappetit:botappetit /var/www/botappetit
+which rsync || sudo apt install -y rsync
+
+# 3. Конфиг nginx (из репозитория)
+sudo cp ~/bot-appetit/deploy/nginx-botappetit.conf /etc/nginx/sites-available/botappetit.goida.root.sx
+sudo ln -s /etc/nginx/sites-available/botappetit.goida.root.sx /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+
+# 4. Сертификат. Посмотри, что уже выпущено; если есть wildcard *.goida.root.sx — используй его пути
+#    в блоке listen 443 ssl, иначе выпусти отдельный (certbot сам допишет HTTPS и редирект)
+sudo certbot certificates
+sudo certbot --nginx -d botappetit.goida.root.sx
+```
+
+Статика появится после первого деплоя через CI (или вручную: `npm run build` в `webapp/` и `rsync -a --delete webapp/dist/ /var/www/botappetit/`).
+
+Проверка:
+
+```bash
+curl -sI https://botappetit.goida.root.sx/ | head -3     # 200
+curl -s  https://botappetit.goida.root.sx/api/summary    # 401: запрос дошёл до FastAPI, нужен initData
+```
+
+`502` на `/api/` — бот не запущен или `API_PORT` в `.env` не совпадает с `proxy_pass` в конфиге.
+
+Кнопка открытия Mini App в чате: BotFather → `/mybots` → бот → **Bot Settings → Menu Button → Configure menu button**, URL `https://botappetit.goida.root.sx`.
+
+---
+
+## Миграция формата порций и времени (разово)
+
+Старый онбординг писал в `profiles.servings` / `profiles.cooking_time` свободный текст, Mini App ждёт число 1–8 и пресет `15/30/60/any`. Приводит старые значения к формату `migrate_normalize_settings.py`. Запускать при остановленном боте, интерпретатором из `.venv`:
+
+```bash
+cd ~/bot-appetit
+sudo systemctl stop bot-appetit
+.venv/bin/python migrate_normalize_settings.py            # dry-run: только отчёт, ничего не пишет
+.venv/bin/python migrate_normalize_settings.py --apply    # запись; перед ней создаёт data/bot.db.bak-<дата-время>
+sudo systemctl start bot-appetit
+```
+
+Нераспознанное («Как можно меньше») остаётся как есть, Mini App показывает такое поле пустым, пока пользователь не выберет значение сам. Скрипт идемпотентен.
 
 ---
 

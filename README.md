@@ -139,8 +139,10 @@ sudo systemctl restart bot-appetit         # ручной рестарт
 
 ### CI/CD (GitHub Actions)
 
-Каждый `git push` в `main` автоматически деплоит на VPS:
-`git pull → pip install → systemctl restart bot-appetit`
+Каждый `git push` в `main` сначала гоняет тесты (`pytest`, `npm run lint`, `npm test`, сборка фронта), и только при зелёном результате деплоит на VPS:
+`scp webapp/dist → git pull → pip install → rsync статики в /var/www/botappetit → systemctl restart bot-appetit`
+
+Mini App отдаёт nginx (HTTPS, `botappetit.goida.root.sx`), `/api/` проксируется на бота. Настройка nginx и сертификата — в `deploy/DEPLOY.md`, раздел «Mini App: nginx и сертификат».
 
 Для работы нужно добавить в **Settings → Secrets** репозитория:
 

@@ -59,6 +59,10 @@ user message
 - Dev: Vite-плагин `webapp/dev/init-data-plugin.ts` отдаёт свежий подписанный `initData` на `/__dev/init-data` (токен и `ADMIN_USER_ID` из `../.env`; только `vite serve`). Прокси `/api` → `127.0.0.1:8080`. Подпись в TS и проверка в Python — независимые реализации алгоритма Telegram, они проверяют друг друга.
 - Тесты: `pytest` (корень, `tests/`, нужен `requirements-dev.txt`), `npm test` / `npm run lint` / `npm run build` в `webapp/`.
 
+### Деплой Mini App
+
+Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` гоняет `pytest` и `lint`/`test`/`build` фронта, job `deploy` (только после зелёного `test`) заливает `webapp/dist` на VPS и рестартит бота. Статику из `~/webapp-upload` в `/var/www/botappetit` переносит `rsync` в SSH-скрипте деплоя: nginx не заходит в `/home`. nginx и certbot настраиваются вручную один раз, конфиг — `deploy/nginx-botappetit.conf`, шаги — `deploy/DEPLOY.md`. Миграции данных (`migrate_*.py`) в CI не входят, запускаются руками.
+
 ### Бэкап памяти
 
 `backup.py` — отдельный процесс (свой systemd-сервис), не часть основного бота. Ежедневно в 03:00: `VACUUM INTO` консистентный снапшот `data/bot.db` → gzip → отправка в backend, выбираемый `BACKUP_BACKEND`:

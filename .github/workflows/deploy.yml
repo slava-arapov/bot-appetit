@@ -5,9 +5,66 @@ on:
     branches: [main]
 
 jobs:
-  deploy:
+  test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+      - name: Backend tests
+        run: |
+          pip install -r requirements-dev.txt
+          pytest -q
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: webapp/package-lock.json
+      - name: Frontend checks and build
+        working-directory: webapp
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run build
+      - name: Save built webapp
+        uses: actions/upload-artifact@v4
+        with:
+          name: webapp-dist
+          path: webapp/dist
+          if-no-files-found: error
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get built webapp
+        uses: actions/download-artifact@v4
+        with:
+          name: webapp-dist
+          path: webapp-dist
+
+      # Статика едет в домашнюю директорию SSH-пользователя, а в /var/www её переносит скрипт ниже:
+      # так scp-action не нужны права на запись в /var/www, а nginx не заходит в /home.
+      - name: Upload webapp to VPS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          source: webapp-dist/*
+          target: webapp-upload
+          strip_components: 1
+          rm: true
+
       - name: Deploy to VPS
         uses: appleboy/ssh-action@v1
         with:
@@ -15,9 +72,11 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_KEY }}
           port: ${{ secrets.SSH_PORT }}
+          script_stop: true
           script: |
             cd ~/bot-appetit
             git pull origin main
             source .venv/bin/activate
             pip install -r requirements.txt --quiet
+            rsync -a --delete ~/webapp-upload/ /var/www/botappetit/
             sudo systemctl restart bot-appetit
