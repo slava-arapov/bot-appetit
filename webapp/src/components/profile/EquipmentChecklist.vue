@@ -110,9 +110,16 @@ function addCustom() {
   min-height: var(--tap-size);
 }
 
+.item span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .item__box {
   width: 22px;
   height: 22px;
+  flex: none;
+  margin: 0;
   accent-color: var(--tg-button);
 }
 
