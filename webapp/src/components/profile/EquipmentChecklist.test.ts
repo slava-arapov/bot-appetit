@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import type { Tag } from '../../api/client'
-import { DEFAULT_EQUIPMENT } from '../../utils/profile'
 import EquipmentChecklist from './EquipmentChecklist.vue'
 
-const mountList = (tags: Tag[] = []) => mount(EquipmentChecklist, { props: { tags } })
+const OPTIONS = ['духовка', 'плита', 'блендер', 'мультиварка']
+
+const mountList = (tags: Tag[] = [], options: string[] = OPTIONS) =>
+  mount(EquipmentChecklist, { props: { options, tags } })
 
 const labels = (w: ReturnType<typeof mountList>) =>
   w.findAll('[data-test="item"]').map((i) => i.text())
@@ -18,7 +20,7 @@ const checkbox = (w: ReturnType<typeof mountList>, name: string) =>
 describe('EquipmentChecklist', () => {
   it('показывает частый список техники, всё не отмечено', () => {
     const w = mountList()
-    expect(labels(w)).toEqual(DEFAULT_EQUIPMENT)
+    expect(labels(w)).toEqual(OPTIONS)
     expect(w.findAll('input:checked')).toHaveLength(0)
   })
 
@@ -26,12 +28,12 @@ describe('EquipmentChecklist', () => {
     // в БД теги уже в нижнем регистре, но старый «Духовка» не должен дать двойной пункт
     const w = mountList([{ id: 1, value: 'Духовка' }])
     expect((checkbox(w, 'духовка').element as HTMLInputElement).checked).toBe(true)
-    expect(labels(w)).toHaveLength(DEFAULT_EQUIPMENT.length) // дубля нет
+    expect(labels(w)).toHaveLength(OPTIONS.length) // дубля нет
   })
 
   it('кастомные пункты из тегов идут в тот же список, отмеченными', () => {
     const w = mountList([{ id: 1, value: 'казан' }])
-    expect(labels(w)).toEqual([...DEFAULT_EQUIPMENT, 'казан'])
+    expect(labels(w)).toEqual([...OPTIONS, 'казан'])
     expect((checkbox(w, 'казан').element as HTMLInputElement).checked).toBe(true)
   })
 
@@ -69,5 +71,14 @@ describe('EquipmentChecklist', () => {
 
     expect(labels(w)).toContain('казан')
     expect((checkbox(w, 'казан').element as HTMLInputElement).checked).toBe(false)
+  })
+
+  it('список пунктов берётся из пропса, а не зашит в компоненте', () => {
+    const w = mountList([], ['казан', 'вок'])
+    expect(labels(w)).toEqual(['казан', 'вок'])
+  })
+
+  it('пока список не пришёл, не рисует пунктов', () => {
+    expect(labels(mountList([], []))).toEqual([])
   })
 })

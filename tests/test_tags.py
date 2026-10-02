@@ -2,6 +2,8 @@ import pytest
 
 import memory.db as db
 
+from config import EQUIPMENT_OPTIONS
+
 from memory.store import (
     add_tag,
     apply_memory_update,
@@ -102,7 +104,15 @@ async def test_onboarding_save_still_replaces_tags(user):
 async def test_api_get_profile_empty(client, user):
     r = await client.get("/api/profile", headers=headers())
     assert r.status_code == 200
-    assert r.json() == {kind: [] for kind in KINDS}
+    assert r.json() == {**{kind: [] for kind in KINDS}, "equipment_options": EQUIPMENT_OPTIONS}
+
+
+async def test_api_get_profile_returns_equipment_options(client, user):
+    await add_tag(user, "equipment", "казан")
+    r = await client.get("/api/profile", headers=headers())
+    assert r.json()["equipment_options"] == EQUIPMENT_OPTIONS
+    # свои пункты остаются в тегах и не попадают в список по умолчанию
+    assert "казан" not in r.json()["equipment_options"]
 
 
 async def test_api_get_profile_returns_tags_with_ids(client, user):

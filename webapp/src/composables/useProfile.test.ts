@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
-import { ApiError, type ProfileResponse } from '../api/client'
+import { ApiError, type ProfileResponse, type TagsByKind } from '../api/client'
 import { useProfile } from './useProfile'
 import { useSnackbar } from './useSnackbar'
 import { createMockWebApp } from '../telegram/mock'
@@ -20,6 +20,7 @@ const profile = (): ProfileResponse => ({
   equipment: [{ id: 2, value: 'духовка' }],
   likes: [{ id: 3, value: 'сыр' }],
   dislikes: [],
+  equipment_options: ['духовка', 'плита'],
 })
 
 beforeEach(() => {
@@ -42,7 +43,7 @@ async function ready() {
   return store
 }
 
-const values = (store: Awaited<ReturnType<typeof ready>>, kind: keyof ProfileResponse) =>
+const values = (store: Awaited<ReturnType<typeof ready>>, kind: keyof TagsByKind) =>
   store.tags.value[kind].map((t) => t.value)
 
 describe('useProfile: загрузка', () => {
@@ -53,6 +54,12 @@ describe('useProfile: загрузка', () => {
     expect(store.loading.value).toBe(false)
     expect(values(store, 'likes')).toEqual(['сыр'])
     expect(values(store, 'restrictions')).toEqual(['без глютена'])
+  })
+
+  it('забирает список техники из ответа и не смешивает его с тегами', async () => {
+    const store = await ready()
+    expect(store.equipmentOptions.value).toEqual(['духовка', 'плита'])
+    expect(Object.keys(store.tags.value).sort()).toEqual(['dislikes', 'equipment', 'likes', 'restrictions'])
   })
 
   it('при ошибке сохраняет сообщение', async () => {

@@ -4,7 +4,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, StringConstraints
 
-from config import EXPIRY_WARNING_DAYS
+from config import EQUIPMENT_OPTIONS, EXPIRY_WARNING_DAYS
 from memory.store import (
     PantryNameTaken,
     add_pantry_item,
@@ -125,7 +125,7 @@ async def remove_pantry_item(item_id: int, user: dict = Depends(current_user)):
 
 @router.get("/profile")
 async def read_profile(user: dict = Depends(current_user)):
-    return await list_tags(int(user["id"]))
+    return {**await list_tags(int(user["id"])), "equipment_options": EQUIPMENT_OPTIONS}
 
 
 @router.post("/profile/tags", status_code=201)

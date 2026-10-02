@@ -24,6 +24,8 @@ from tests.test_api import headers
         ("9", None),
         ("0", None),
         ("семья", None),
+        ("1, иногда 2", 1),
+        ("на 1", 1),
         ("", None),
         (None, None),
     ],
@@ -47,8 +49,25 @@ def test_normalize_servings(raw, expected):
         ("не важно.", "any"),
         ("не важно, любое", "any"),
         ("время не важно", "any"),
+        ("до 30 минут", "30"),
+        ("30 мин", "30"),
+        ("1 час", "60"),
+        ("час", "60"),
+        ("1 ч", "60"),
+        ("до часа", "60"),
+        ("Не более 1 часа", "60"),
+        ("60 минут", "60"),
         ("до получаса", None),
         ("20 минут", None),
+        ("40 минут", None),
+        ("полтора часа", None),
+        ("2 часа", None),
+        ("30 часов", None),
+        ("15 часов в неделю", None),
+        ("2 часа 30 минут", None),
+        ("1 час 30 минут", None),
+        ("30 минут", "30"),
+        ("Как можно меньше", None),
         ("", None),
         (None, None),
     ],
@@ -164,3 +183,11 @@ async def test_api_patch_settings_rejects_bad_body(client, body):
 async def test_api_settings_without_auth_is_401(client):
     assert (await client.get("/api/settings")).status_code == 401
     assert (await client.patch("/api/settings", json={"servings": 2})).status_code == 401
+
+
+def test_equipment_options_are_unique_lowercase():
+    from config import EQUIPMENT_OPTIONS
+
+    assert len(EQUIPMENT_OPTIONS) == len(set(EQUIPMENT_OPTIONS))
+    assert all(option == option.strip().lower() for option in EQUIPMENT_OPTIONS)
+    assert {"духовка", "плита", "блендер"} <= set(EQUIPMENT_OPTIONS)

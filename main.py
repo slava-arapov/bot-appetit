@@ -10,6 +10,7 @@ from bot.handlers import (
     handle_message,
     handle_approval_callback,
     handle_reset_callback,
+    handle_onboarding_callback,
     error_handler,
     pending_command,
     broadcast_command,
@@ -91,6 +92,7 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_approval_callback, pattern=r"^(approve|reject):"))
     app.add_handler(CallbackQueryHandler(handle_reset_callback, pattern=r"^reset"))
+    app.add_handler(CallbackQueryHandler(handle_onboarding_callback, pattern=r"^onb:"))
     app.add_error_handler(error_handler)
     app.job_queue.run_daily(notify_expiring, time=datetime.time(9, 0))
     logging.info("Bot Appetit запущен")

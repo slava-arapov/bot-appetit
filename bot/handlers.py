@@ -3,13 +3,22 @@ import logging
 
 from telegramify_markdown import markdownify
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
 from telegram.constants import ChatAction, ParseMode
 from telegram.ext import ContextTypes
 from telegram.error import BadRequest, Forbidden, TimedOut
 
-from agent.chef import run_agent, run_onboarding, current_onboarding_question
-from config import ADMIN_USER_ID
+from agent.chef import (
+    ONBOARDING_STEPS,
+    StepView,
+    apply_onboarding_choice,
+    current_onboarding_question,
+    run_agent,
+    run_onboarding,
+    split_items,
+)
+from bot.keyboards import equipment_keyboard, keyboard_for
+from config import ADMIN_USER_ID, EQUIPMENT_OPTIONS
 from memory.store import (
     load_profile,
     load_pantry,
@@ -18,6 +27,7 @@ from memory.store import (
     reset_all,
     describe_servings,
     describe_cooking_time,
+    normalize_tag,
 )
 from memory.users import (
     get_user_status,
@@ -105,6 +115,209 @@ async def _with_typing(update: Update, context: ContextTypes.DEFAULT_TYPE, coro)
         await typing_task
 
 
+async def _send_message(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str, reply_markup=None
+) -> Message | None:
+    """Шлёт сообщение в MarkdownV2 (при BadRequest — обычным текстом). None — не доставлено."""
+    try:
+        return await context.bot.send_message(
+            chat_id=chat_id, text=markdownify(text), parse_mode=ParseMode.MARKDOWN_V2, reply_markup=reply_markup
+        )
+    except BadRequest:
+        try:
+            return await context.bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        except (BadRequest, Forbidden, TimedOut):
+            return None
+    except (Forbidden, TimedOut):
+        return None
+
+
+# Состояние шага «техника» живёт в context.user_data (в БД пишется только итог по «Готово»):
+# onb_equipment — индексы выбранных пунктов EQUIPMENT_OPTIONS, onb_custom — свои пункты,
+# onb_msg — id сообщения с клавиатурой, которое перерисовывается при добавлении своих пунктов.
+_ONB_STATE_KEYS = ("onb_equipment", "onb_custom", "onb_msg")
+_STALE_ANSWER = "Этот вопрос уже неактуален"
+
+
+def _reset_onboarding_state(context: ContextTypes.DEFAULT_TYPE):
+    for key in _ONB_STATE_KEYS:
+        context.user_data.pop(key, None)
+
+
+async def _send_view(
+    context: ContextTypes.DEFAULT_TYPE, chat_id: int, view: StepView, *, fresh: bool = True
+) -> Message | None:
+    """Показывает шаг анкеты с его клавиатурой. fresh=True на шаге техники начинает выбор с нуля."""
+    step = view.step
+    is_equipment = step is not None and step.kind == "multiselect"
+    previous_msg = context.user_data.get("onb_msg") if fresh and is_equipment else None
+    if fresh and is_equipment:
+        _reset_onboarding_state(context)
+        context.user_data["onb_equipment"] = set()
+        context.user_data["onb_custom"] = []
+    markup = keyboard_for(step, context.user_data.get("onb_equipment"))
+    message = await _send_message(context, chat_id, view.text, markup)
+    if message is not None and is_equipment:
+        context.user_data["onb_msg"] = message.message_id
+        if previous_msg is not None and previous_msg != message.message_id:
+            # кнопки старого сообщения иначе остались бы живыми и показывали бы устаревшие галочки
+            try:
+                await context.bot.edit_message_reply_markup(chat_id=chat_id, message_id=previous_msg, reply_markup=None)
+            except (BadRequest, Forbidden, TimedOut):
+                pass
+    return message
+
+
+async def _is_approved(user_id: int) -> bool:
+    return user_id == ADMIN_USER_ID or await get_user_status(user_id) == "approved"
+
+
+async def _active_onboarding_field(user_id: int) -> str | None:
+    """Поле шага, ждущего ответа; None — анкета не начата или закончена."""
+    profile = await load_profile(user_id)
+    step_number = profile.get("onboarding_step", 0)
+    if profile.get("onboarding_done") or step_number == 0:
+        return None
+    return ONBOARDING_STEPS[step_number - 1].field
+
+
+async def _answer_stale(query):
+    await query.answer(_STALE_ANSWER)
+    try:
+        await query.edit_message_reply_markup(reply_markup=None)
+    except BadRequest:
+        pass
+
+
+async def _mark_answered(query, answer: str):
+    """Дописывает выбранное к вопросу и убирает клавиатуру. Не удалось — не страшно, шаг уже сохранён."""
+    try:
+        await query.edit_message_text(f"{query.message.text}\n\n✓ {answer}")
+    except BadRequest:
+        pass
+
+
+def _choice_label(field: str, value: str) -> str:
+    describe = describe_servings if field == "servings" else describe_cooking_time
+    return describe(value) or value
+
+
+def _equipment_text(custom: list[str]) -> str:
+    step = next(s for s in ONBOARDING_STEPS if s.kind == "multiselect")
+    return f"{step.question}\n\nДобавлено: {', '.join(custom)}" if custom else step.question
+
+
+async def handle_onboarding_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    user_id = query.from_user.id
+    if not await _is_approved(user_id):
+        await query.answer()
+        return
+
+    _, kind, value = query.data.split(":", 2)
+    field = {"servings": "servings", "time": "cooking_time", "eq": "equipment"}.get(kind)
+    if field is None or field != await _active_onboarding_field(user_id):
+        await _answer_stale(query)
+        return
+
+    if kind == "eq":
+        await _handle_equipment_callback(query, context, user_id, value)
+        return
+
+    view = await apply_onboarding_choice(user_id, field, value)
+    if view is None:
+        await _answer_stale(query)
+        return
+    await query.answer()
+    if view.step is not None and view.step.field == field:
+        return  # значение не прошло проверку, шаг остался на месте
+    await _mark_answered(query, _choice_label(field, value))
+    await _send_view(context, query.message.chat_id, view)
+
+
+async def _handle_equipment_callback(query, context: ContextTypes.DEFAULT_TYPE, user_id: int, value: str):
+    selected: set[int] | None = context.user_data.get("onb_equipment")
+    if selected is None:
+        # состояние потеряно (рестарт бота), а на экране остались старые галочки: не гадаем, что было
+        # отмечено, и не сохраняем пустой список по «Готово» — начинаем выбор заново
+        await query.answer("Выбор сбросился, отметь технику заново")
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except BadRequest:
+            pass
+        await _send_view(context, query.message.chat_id, await current_onboarding_question(user_id))
+        return
+    custom: list[str] = context.user_data.setdefault("onb_custom", [])
+
+    if value == "other":
+        context.user_data["onb_msg"] = query.message.message_id
+        await query.answer()
+        await _send_message(context, query.message.chat_id, "Напиши через запятую, чего не хватает в списке ✏️")
+        return
+
+    if value == "done":
+        items = [EQUIPMENT_OPTIONS[i] for i in sorted(selected)] + custom
+        view = await apply_onboarding_choice(user_id, "equipment", items)
+        if view is None:
+            await _answer_stale(query)
+            return
+        await query.answer()
+        _reset_onboarding_state(context)
+        await _mark_answered(query, ", ".join(items) or "ничего из списка")
+        await _send_view(context, query.message.chat_id, view)
+        return
+
+    if not value.isdigit() or int(value) >= len(EQUIPMENT_OPTIONS):
+        await query.answer()
+        return
+    selected.symmetric_difference_update({int(value)})
+    await query.answer()
+    try:
+        await query.edit_message_reply_markup(reply_markup=equipment_keyboard(selected))
+    except BadRequest:
+        pass
+
+
+async def _add_custom_equipment(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
+    """Текст на шаге техники — это «своя» техника: пункты из списка отмечаются, остальные добавляются."""
+    selected: set[int] = context.user_data.setdefault("onb_equipment", set())
+    custom: list[str] = context.user_data.setdefault("onb_custom", [])
+    for item in split_items(text):
+        name = normalize_tag(item)
+        if name in EQUIPMENT_OPTIONS:
+            selected.add(EQUIPMENT_OPTIONS.index(name))
+        elif name not in custom:
+            custom.append(name)
+
+    chat_id = update.effective_chat.id
+    markup = equipment_keyboard(selected)
+    message_id = context.user_data.get("onb_msg")
+    if message_id is not None:
+        try:
+            await context.bot.edit_message_text(
+                chat_id=chat_id, message_id=message_id, text=_equipment_text(custom), reply_markup=markup
+            )
+            await _send_message(context, chat_id, "Добавил 👍 Жми «Готово», когда закончишь.")
+            return
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                await _send_message(context, chat_id, "Это уже отмечено 👍")
+                return
+    message = await _send_message(context, chat_id, _equipment_text(custom), markup)
+    if message is not None:
+        context.user_data["onb_msg"] = message.message_id
+
+
+async def _handle_onboarding_text(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, text: str):
+    field = await _active_onboarding_field(user_id)
+    step = next((s for s in ONBOARDING_STEPS if s.field == field), None)
+    if step is not None and step.kind == "multiselect":
+        await _add_custom_equipment(update, context, text)
+        return
+    view = await _with_typing(update, context, run_onboarding(user_id, text))
+    await _send_view(context, update.effective_chat.id, view)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     access = await _resolve_access(update)
     user_id = update.effective_user.id
@@ -125,11 +338,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     profile = await load_profile(user_id)
     if not profile.get("onboarding_done"):
-        reply = await _show_onboarding_question(update, context, user_id)
+        view = await _show_onboarding_question(update, context, user_id)
+        await _send_view(context, update.effective_chat.id, view)
     else:
         await reset_context(user_id)
-        reply = "Привет! Начинаем с чистого листа — что приготовим?"
-    await _send(update, reply)
+        await _send(update, "Привет! Начинаем с чистого листа — что приготовим?")
 
 
 async def _require_approved(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
@@ -150,7 +363,7 @@ async def _require_approved(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return False
 
 
-async def _show_onboarding_question(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
+async def _show_onboarding_question(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int) -> StepView:
     """Показывает текущий вопрос анкеты, не отвечая на него автоматически."""
     profile = await load_profile(user_id)
     if profile.get("onboarding_step", 0) == 0:
@@ -173,8 +386,8 @@ async def _require_onboarded(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if profile.get("onboarding_done"):
         return True
 
-    question = await _show_onboarding_question(update, context, user_id)
-    await _send(update, f"Давай сначала закончим анкету 📋\n\n{question}")
+    view = await _show_onboarding_question(update, context, user_id)
+    await _send_view(context, update.effective_chat.id, StepView(f"Давай сначала закончим анкету 📋\n\n{view.text}", view.step))
     return False
 
 
@@ -183,10 +396,10 @@ async def _run_agent_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, u
     profile = await load_profile(user_id)
 
     if not profile.get("onboarding_done"):
-        reply = await _with_typing(update, context, run_onboarding(user_id, user_text))
-        model_name = None
-    else:
-        reply, model_name = await _with_typing(update, context, run_agent(user_id, user_text))
+        await _handle_onboarding_text(update, context, user_id, user_text)
+        return
+
+    reply, model_name = await _with_typing(update, context, run_agent(user_id, user_text))
 
     if model_name:
         reply = f"{reply}\n\n||_{model_name}_||"
@@ -332,8 +545,8 @@ async def handle_reset_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reset_fn, text = restart
             await reset_fn(user_id)
             await query.edit_message_text(text)
-            question = await run_onboarding(user_id, "")
-            await _send_to_chat(context, query.message.chat_id, question)
+            _reset_onboarding_state(context)
+            await _send_view(context, query.message.chat_id, await run_onboarding(user_id, ""))
         else:
             handler = _RESET_ACTIONS.get(action)
             if handler:
@@ -367,13 +580,7 @@ async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT
 
         profile = await load_profile(target_id)
         if not profile.get("onboarding_done"):
-            reply = await run_onboarding(target_id, "")
-            try:
-                await context.bot.send_message(
-                    chat_id=target_id, text=markdownify(reply), parse_mode=ParseMode.MARKDOWN_V2
-                )
-            except BadRequest:
-                await context.bot.send_message(chat_id=target_id, text=reply)
+            await _send_view(context, target_id, await run_onboarding(target_id, ""))
     else:
         await reject_user(target_id)
         await mark_rejection_notified(target_id)
@@ -428,17 +635,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def _send_to_chat(context: ContextTypes.DEFAULT_TYPE, chat_id: int, text: str) -> bool:
-    try:
-        await context.bot.send_message(chat_id=chat_id, text=markdownify(text), parse_mode=ParseMode.MARKDOWN_V2)
-        return True
-    except BadRequest:
-        try:
-            await context.bot.send_message(chat_id=chat_id, text=text)
-            return True
-        except (BadRequest, Forbidden, TimedOut):
-            return False
-    except (Forbidden, TimedOut):
-        return False
+    return await _send_message(context, chat_id, text) is not None
 
 
 async def _send_preformatted_to_chat(

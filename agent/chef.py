@@ -1,4 +1,6 @@
 import json
+from dataclasses import dataclass
+from typing import Literal
 
 import logging
 from datetime import date
@@ -10,14 +12,37 @@ from memory.store import (
     load_history, load_context, save_context,
     load_pantry, apply_memory_update,
     describe_servings, describe_cooking_time,
+    normalize_servings, normalize_cooking_time,
 )
 
 logger = logging.getLogger(__name__)
 
 _llm = OpenRouterClient(api_key=OPENROUTER_API_KEY, models=LLM_MODELS)
 
-ONBOARDING_QUESTIONS = [
-    (
+
+@dataclass(frozen=True)
+class Step:
+    """Шаг анкеты. `choice` отвечается кнопкой (или текстом, который распознаёт `normalize_*`),
+    `multiselect` — набором кнопок, `text` — свободным текстом через запятую."""
+
+    field: str
+    question: str
+    kind: Literal["text", "choice", "multiselect"]
+
+
+@dataclass(frozen=True)
+class StepView:
+    """Что показать пользователю: `step` — вопрос, ждущий ответа, либо None, когда анкета закончена.
+    Клавиатуру по `step.kind` строит слой бота (`bot/keyboards.py`)."""
+
+    text: str
+    step: Step | None = None
+
+
+ONBOARDING_STEPS = [
+    Step(
+        "likes",
+        (
         "Привет! Я Bot Appetit — твой личный шеф-повар 🍳\n\n"
         "Вот что я умею:\n"
         "• Предлагаю рецепты по тому, что есть дома\n"
@@ -28,15 +53,29 @@ ONBOARDING_QUESTIONS = [
         "• Пишу, что докупить, если чего-то не хватает\n"
         "• Запоминаю вкусы и предпочтения по ходу разговора\n\n"
         "Давай познакомимся. Какие кухни мира тебе нравятся? (итальянская, азиатская, грузинская...)"
+        ),
+        "text",
     ),
-    "Что ты точно не ешь или не любишь? (продукты, ингредиенты)",
-    "Есть ли диета, аллергии или другие ограничения в еде?",
-    "На сколько человек обычно готовишь?",
-    "Сколько времени обычно готов тратить на готовку? (до 30 минут, 1 час, не важно...)",
-    "Какая техника и посуда есть на кухне? (духовка, мультиварка, блендер, аэрогриль...)",
+    Step("dislikes", "Что ты точно не ешь или не любишь? (продукты, ингредиенты)", "text"),
+    Step("restrictions", "Есть ли диета, аллергии или другие ограничения в еде?", "text"),
+    Step("servings", "На сколько человек обычно готовишь?", "choice"),
+    Step("cooking_time", "Сколько времени обычно готов тратить на готовку?", "choice"),
+    Step(
+        "equipment",
+        "Какая техника и посуда есть на кухне? Отметь кнопками, а если чего-то нет в списке — нажми «✏️ Другое».",
+        "multiselect",
+    ),
 ]
 
-ONBOARDING_FIELDS = ["likes", "dislikes", "restrictions", "servings", "cooking_time", "equipment"]
+_CHOICE_HINT = "Выбери вариант кнопкой 👇"
+
+_ONBOARDING_DONE = (
+    "Отлично, я всё запомнил! 🎉\n\n"
+    "Если что-то поменяется, пиши мне в свободной форме: что есть дома, что хочется, сколько есть свободного времени. "
+    "Если скажешь, что купил или доел что-то — обновлю запасы. "
+    "Когда что-то будет скоро портиться — напомню сам.\n\n"
+    "Что приготовим?"
+)
 
 SYSTEM_PROMPT_TEMPLATE = """\
 Ты — Bot Appetit, персональный шеф-повар пользователя в Telegram.
@@ -227,41 +266,59 @@ async def run_agent(user_id: int, user_message: str) -> tuple[str, str | None]:
     return reply, model_name
 
 
-async def current_onboarding_question(user_id: int) -> str:
+def split_items(text: str) -> list[str]:
+    return [i.strip() for i in text.replace("\n", ",").split(",") if i.strip()]
+
+
+def _step_view(step_number: int) -> StepView:
+    step = ONBOARDING_STEPS[max(step_number - 1, 0)]
+    return StepView(step.question, step)
+
+
+async def current_onboarding_question(user_id: int) -> StepView:
     """Возвращает уже заданный, но ещё не отвеченный вопрос анкеты, не трогая profile."""
     profile = await load_profile(user_id)
-    step = profile.get("onboarding_step", 0)
-    return ONBOARDING_QUESTIONS[max(step - 1, 0)]
+    return _step_view(profile.get("onboarding_step", 0))
 
 
-async def run_onboarding(user_id: int, user_message: str) -> str:
-    profile = await load_profile(user_id)
-    step = profile.get("onboarding_step", 0)
+async def _submit_answer(user_id: int, profile: dict, answer: str | list[str]) -> StepView:
+    """Сохраняет ответ на текущий шаг (если он валиден) и возвращает следующий вопрос.
 
-    # Сохранить ответ на текущий шаг (кроме первого приветствия)
-    if step > 0:
-        field = ONBOARDING_FIELDS[step - 1]
-        if field in ("likes", "dislikes", "restrictions", "equipment"):
-            # Разбиваем ответ на список (через запятую или перенос строки)
-            items = [i.strip() for i in user_message.replace("\n", ",").split(",") if i.strip()]
-            profile[field] = items
+    Невалидный ответ на `choice` ничего не пишет и не двигает шаг: вопрос показывается повторно.
+    """
+    step_number = profile.get("onboarding_step", 0)
+    if step_number > 0:
+        step = ONBOARDING_STEPS[step_number - 1]
+        if step.kind == "choice":
+            normalize = normalize_servings if step.field == "servings" else normalize_cooking_time
+            value = normalize(answer if isinstance(answer, str) else "")
+            if value is None:
+                return StepView(f"{_CHOICE_HINT}\n\n{step.question}", step)
+            profile[step.field] = str(value)
         else:
-            profile[field] = user_message
+            profile[step.field] = split_items(answer) if isinstance(answer, str) else list(answer)
 
-    # Переход на следующий шаг
-    if step < len(ONBOARDING_QUESTIONS):
-        question = ONBOARDING_QUESTIONS[step]
-        profile["onboarding_step"] = step + 1
+    if step_number < len(ONBOARDING_STEPS):
+        profile["onboarding_step"] = step_number + 1
         await save_profile(user_id, profile)
-        return question
-    else:
-        # Онбординг завершён
-        profile["onboarding_done"] = True
-        await save_profile(user_id, profile)
-        return (
-            "Отлично, я всё запомнил! 🎉\n\n"
-            "Пиши в свободной форме: что есть дома, что хочется, сколько времени есть. "
-            "Если скажешь, что купил или доел что-то — обновлю запасы. "
-            "Когда что-то будет скоро портиться — напомню сам.\n\n"
-            "Что приготовим?"
-        )
+        return _step_view(step_number + 1)
+
+    profile["onboarding_done"] = True
+    await save_profile(user_id, profile)
+    return StepView(_ONBOARDING_DONE)
+
+
+async def run_onboarding(user_id: int, user_message: str) -> StepView:
+    profile = await load_profile(user_id)
+    return await _submit_answer(user_id, profile, user_message)
+
+
+async def apply_onboarding_choice(user_id: int, field: str, value: str | list[str]) -> StepView | None:
+    """Ответ кнопкой на шаг `field`. None — кнопка устарела (шаг пройден, анкета закончена или не начата)."""
+    profile = await load_profile(user_id)
+    step_number = profile.get("onboarding_step", 0)
+    if profile.get("onboarding_done") or step_number == 0:
+        return None
+    if ONBOARDING_STEPS[step_number - 1].field != field:
+        return None
+    return await _submit_answer(user_id, profile, value)

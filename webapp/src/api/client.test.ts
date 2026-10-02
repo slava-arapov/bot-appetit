@@ -154,7 +154,7 @@ describe('profile api', () => {
   }
 
   it('getProfile читает /api/profile', async () => {
-    const body = { restrictions: [], equipment: [], likes: [], dislikes: [] }
+    const body = { restrictions: [], equipment: [], likes: [], dislikes: [], equipment_options: ['духовка'] }
     const fetchMock = setup(new Response(JSON.stringify(body)))
     expect(await getProfile()).toEqual(body)
     expect(fetchMock.mock.calls[0][0]).toBe('/api/profile')

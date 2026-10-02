@@ -4,7 +4,7 @@ import TagGroup from '../components/profile/TagGroup.vue'
 import { useProfile } from '../composables/useProfile'
 
 const profile = useProfile()
-const { tags, loading, loadError } = profile
+const { tags, equipmentOptions, loading, loadError } = profile
 </script>
 
 <template>
@@ -29,6 +29,7 @@ const { tags, loading, loadError } = profile
         @remove="profile.remove('restrictions', $event)"
       />
       <EquipmentChecklist
+        :options="equipmentOptions"
         :tags="tags.equipment"
         @toggle="profile.toggleEquipment"
         @add="profile.add('equipment', $event)"

@@ -20,6 +20,7 @@ const profile = (): ProfileResponse => ({
   equipment: [{ id: 2, value: 'духовка' }],
   likes: [{ id: 3, value: 'сыр' }],
   dislikes: [],
+  equipment_options: ['духовка', 'плита', 'блендер'],
 })
 
 beforeEach(() => {
@@ -57,6 +58,12 @@ describe('ProfileView', () => {
       'Любит',
       'Не любит',
     ])
+  })
+
+  it('чек-лист техники строится из списка, пришедшего с сервера', async () => {
+    const w = await mountView()
+    const items = w.findAll('section')[1].findAll('[data-test="item"]')
+    expect(items.map((i) => i.text())).toEqual(['духовка', 'плита', 'блендер'])
   })
 
   it('добавление тега в «Не любит» сохраняет его', async () => {

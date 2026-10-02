@@ -4,7 +4,7 @@ import {
   createTag,
   deleteTag,
   getProfile,
-  type ProfileResponse,
+  type TagsByKind,
   type Tag,
   type TagKind,
 } from '../api/client'
@@ -13,7 +13,9 @@ import { normalizeTag, sameValue } from '../utils/profile'
 import { useSnackbar } from './useSnackbar'
 
 export function useProfile() {
-  const tags = ref<ProfileResponse>({ restrictions: [], equipment: [], likes: [], dislikes: [] })
+  const tags = ref<TagsByKind>({ restrictions: [], equipment: [], likes: [], dislikes: [] })
+  // Список техники приходит с сервера (config.EQUIPMENT_OPTIONS), тот же, что кнопки в онбординге
+  const equipmentOptions = ref<string[]>([])
   const loading = ref(true)
   const loadError = ref<string | null>(null)
   const snackbar = useSnackbar()
@@ -25,7 +27,9 @@ export function useProfile() {
     if (!silent) loading.value = true
     loadError.value = null
     try {
-      tags.value = await getProfile()
+      const { equipment_options, ...byKind } = await getProfile()
+      tags.value = byKind
+      equipmentOptions.value = equipment_options ?? []
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -99,5 +103,5 @@ export function useProfile() {
 
   void load()
 
-  return { tags, loading, loadError, add, remove, toggleEquipment, reload: load }
+  return { tags, equipmentOptions, loading, loadError, add, remove, toggleEquipment, reload: load }
 }

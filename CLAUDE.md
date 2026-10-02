@@ -51,7 +51,7 @@ user message
 
 ### Mini App: API и dev-окружение
 
-Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). План реализации по срезам — `docs/telegram-mini-app-implementation.md`. Готовы все срезы v1: «Настройки» (`GET/PATCH /api/settings`), «Pantry» (`GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`), «Профиль» (`GET /api/profile`, `POST /api/profile/tags`, `DELETE /api/profile/tags/{id}`) и хаб (`GET /api/summary` — счётчики для подписей карточек; при ошибке карточки остаются без подписей). Точечные операции с `id` (`add_pantry_item`/`update_pantry_item`/`delete_pantry_item`, `add_tag`/`remove_tag`) живут в `memory/store.py` и используются и API, и ботом (`apply_pantry_update`, `apply_memory_update`), чтобы правка из Mini App не терялась из-за load→save всего списка. `save_profile` (полная перезапись с пересозданием тегов) остался только для онбординга и сбросов, поэтому `id` тегов нестабильны между сессиями: фронт при 404 тихо перезапрашивает профиль. UI-библиотека фронта — Vant (выборочно: `SwipeCell`, `Popup`, `Skeleton`), остальное написано самим.
+Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). План реализации по срезам — `docs/telegram-mini-app-implementation.md`. Готовы все срезы v1: «Настройки» (`GET/PATCH /api/settings`), «Pantry» (`GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`), «Профиль» (`GET /api/profile` — теги по группам плюс `equipment_options`, список техники для чек-листа из `config.EQUIPMENT_OPTIONS`; `POST /api/profile/tags`, `DELETE /api/profile/tags/{id}`) и хаб (`GET /api/summary` — счётчики для подписей карточек; при ошибке карточки остаются без подписей). Точечные операции с `id` (`add_pantry_item`/`update_pantry_item`/`delete_pantry_item`, `add_tag`/`remove_tag`) живут в `memory/store.py` и используются и API, и ботом (`apply_pantry_update`, `apply_memory_update`), чтобы правка из Mini App не терялась из-за load→save всего списка. `save_profile` (полная перезапись с пересозданием тегов) остался только для онбординга и сбросов, поэтому `id` тегов нестабильны между сессиями: фронт при 404 тихо перезапрашивает профиль. UI-библиотека фронта — Vant (выборочно: `SwipeCell`, `Popup`, `Skeleton`), остальное написано самим.
 
 - `webapp_api/` — FastAPI в том же event loop, что и бот: `server.py:start_api()/stop_api()` (uvicorn без перехвата сигналов, при ошибке старта — `RuntimeError`) вызываются из `main.py:_post_init/_post_shutdown`. Использует общее соединение `memory/db.py:get_conn()`. Отключить нельзя — API стартует вместе с ботом.
 - Авторизация одна и без dev-обходов: `webapp_api/deps.py:current_user` читает `Authorization: tma <initData>`, `auth.py:validate_init_data` проверяет HMAC-подпись и `auth_date` (`INITDATA_MAX_AGE`), затем статус `approved` в `users` (401 — плохой initData, 403 — нет доступа).
@@ -103,9 +103,20 @@ user message
 
 ## Онбординг
 
-Запускается когда `profile["onboarding_done"] == false` (профиль из SQLite, `memory/store.py:load_profile`). Шесть вопросов подряд (включая вопрос про технику/посуду), ответы пишутся в profile. Шаг хранится в `profile["onboarding_step"]`: это индекс+1 вопроса, который уже задан и ждёт ответа (`ONBOARDING_QUESTIONS[onboarding_step - 1]`).
+Запускается когда `profile["onboarding_done"] == false` (профиль из SQLite, `memory/store.py:load_profile`). Шесть шагов подряд, описаны списком `ONBOARDING_STEPS` в `agent/chef.py` (`Step(field, question, kind)`). Шаг хранится в `profile["onboarding_step"]`: это индекс+1 вопроса, который уже задан и ждёт ответа (`ONBOARDING_STEPS[onboarding_step - 1]`).
 
-`run_onboarding(user_id, user_message)` при `onboarding_step > 0` трактует `user_message` как ответ на текущий вопрос — поэтому его нельзя дёргать с пустой строкой посреди анкеты (затрёт текущий шаг). Для повторного показа текущего вопроса без сайд-эффектов есть `current_onboarding_question(user_id)` (read-only) — им пользуется `/start`, когда анкета не завершена.
+Тип шага (`kind`) задаёт формат ответа, он совпадает с форматом в Mini App:
+- `text` (likes, dislikes, restrictions) — свободный текст, режется по запятым и переносам строк в теги.
+- `choice` (servings, cooking_time) — кнопки; в `profiles` пишется пресет (`"2"`, `"30"`, `"any"`, как в `set_settings`). Текстовый ответ тоже принимается, если его распознают `normalize_servings` / `normalize_cooking_time` («на 2», «1 час»); иначе шаг повторяется с подсказкой «Выбери вариант кнопкой» и `onboarding_step` не двигается.
+- `multiselect` (equipment) — кнопки из `config.EQUIPMENT_OPTIONS` + «✏️ Другое» + «Готово». Тот же список отдаёт Mini App (`equipment_options` в `GET /api/profile`), поэтому правится только в `config.py`. Текст на этом шаге считается «своей» техникой.
+
+`run_onboarding(user_id, user_message)` и `current_onboarding_question(user_id)` возвращают `StepView(text, step)` (`step=None` — анкета закончена). Клавиатуру по `step.kind` строит слой бота (`bot/keyboards.py:keyboard_for`), чтобы `agent/` не зависел от `telegram`. `run_onboarding` при `onboarding_step > 0` трактует `user_message` как ответ на текущий вопрос — поэтому его нельзя дёргать с пустой строкой посреди анкеты (затрёт текущий шаг). Для повторного показа текущего вопроса без сайд-эффектов есть `current_onboarding_question(user_id)` (read-only) — им пользуется `/start`, когда анкета не завершена.
+
+Нажатия кнопок обрабатывает `bot/handlers.py:handle_onboarding_callback` (`callback_data`: `onb:servings:<n>`, `onb:time:<пресет>`, `onb:eq:<индекс в EQUIPMENT_OPTIONS>|other|done`) через `agent/chef.py:apply_onboarding_choice(user_id, field, value)`. Она возвращает `None`, если кнопка устарела (шаг уже пройден, анкета закончена или не начата): хендлер отвечает «Этот вопрос уже неактуален» и убирает клавиатуру, в БД ничего не пишется. Это же защищает от двойного тапа.
+
+Промежуточный выбор техники (индексы галочек, свои пункты, id сообщения с клавиатурой) живёт в `context.user_data` (`onb_equipment`, `onb_custom`, `onb_msg`), в БД пишется только итог по «Готово». После рестарта бота выбор теряется: нажатие на кнопку техники в старом сообщении отвечает «Выбор сбросился, отметь технику заново», гасит старую клавиатуру и показывает шаг заново (пустой список в БД не пишется). `/start` и сброс анкеты обнуляют это состояние (`_reset_onboarding_state`) и гасят кнопки предыдущего сообщения с техникой. Порядок `config.EQUIPMENT_OPTIONS` — контракт с уже отправленными клавиатурами (в `callback_data` лежит индекс): новые пункты добавляй только в конец.
+
+Старые значения в `profiles.servings` / `profiles.cooking_time` (свободный текст из прежнего онбординга) приводит к формату Mini App разовый `migrate_normalize_settings.py` (по умолчанию dry-run, `--apply` делает `*.bak-<дата>` перед записью, идемпотентен). Что он не распознал («Как можно меньше»), остаётся как есть, а Mini App показывает такое поле пустым.
 
 После онбординга все сообщения идут через `run_agent()`.
 
@@ -141,9 +152,10 @@ user message
 
 ### Роутинг `CallbackQueryHandler`
 
-В `main.py` два колбэк-хендлера различаются по `pattern` — без этого первый зарегистрированный ловил бы вообще все inline-нажатия:
+В `main.py` три колбэк-хендлера различаются по `pattern` — без этого первый зарегистрированный ловил бы вообще все inline-нажатия:
 - `handle_approval_callback` — `pattern=r"^(approve|reject):"` (одобрение заявок)
 - `handle_reset_callback` — `pattern=r"^reset"` (покрывает `reset:`, `reset_confirm:` и `reset_cancel`)
+- `handle_onboarding_callback` — `pattern=r"^onb:"` (кнопки анкеты; сама проверяет, что пользователь `approved`)
 
 ## Переменные окружения
 

@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import type { Tag } from '../../api/client'
-import { DEFAULT_EQUIPMENT, lowercaseInput, normalizeTag, sameValue } from '../../utils/profile'
+import { lowercaseInput, normalizeTag, sameValue } from '../../utils/profile'
 
-const props = defineProps<{ tags: Tag[] }>()
+const props = defineProps<{ options: string[]; tags: Tag[] }>()
 const emit = defineEmits<{ toggle: [name: string]; add: [value: string] }>()
 
 // Кастомные пункты, которые уже встречались на экране: выключенный остаётся в списке до перезагрузки.
@@ -11,7 +11,7 @@ const custom = ref<string[]>([])
 const draft = ref('')
 
 function remember(value: string) {
-  const known = [...DEFAULT_EQUIPMENT, ...custom.value].some((name) => sameValue(name, value))
+  const known = [...props.options, ...custom.value].some((name) => sameValue(name, value))
   if (!known) custom.value = [...custom.value, value]
 }
 
@@ -22,7 +22,7 @@ watch(
 )
 
 const items = computed(() =>
-  [...DEFAULT_EQUIPMENT, ...custom.value].map((name) => ({
+  [...props.options, ...custom.value].map((name) => ({
     name,
     checked: props.tags.some((tag) => sameValue(tag.value, name)),
   })),

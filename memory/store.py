@@ -114,6 +114,12 @@ def normalize_servings(raw: str | None) -> int | None:
     return value if low <= value <= high else None
 
 
+_ONE_HOUR_RE = re.compile(r"(?:(?:до|не\s+более|не\s+больше|около|максимум)\s+)?(?:1\s*)?(?:час|часа|ч)\.?")
+
+
+_NON_MINUTE_UNIT_RE = re.compile(r"\d+\s*(?:ч\b|час|сут|дн|нед|мес)")
+
+
 def normalize_cooking_time(raw: str | None) -> str | None:
     """Приводит значение к пресету из COOKING_TIME_PRESETS, иначе None. Ближайший пресет не подбирает."""
     text = (raw or "").strip().lower()
@@ -122,6 +128,12 @@ def normalize_cooking_time(raw: str | None) -> str | None:
     # «не важно» и «неважно» пишут по-разному, да и фраза бывает длиннее («не важно, любое.»)
     if re.search(r"не\s*важно", text):
         return "any"
+    # «час», «1 ч», «до часа», «не более 1 часа» — ровно один час; «2 часа» и «полтора часа» не округляем
+    if _ONE_HOUR_RE.fullmatch(text):
+        return "60"
+    # число с единицей не «минуты» («30 часов», «2 часа 30 минут») нельзя читать как минуты
+    if _NON_MINUTE_UNIT_RE.search(text):
+        return None
     match = re.search(r"\d+", text)
     if match and match.group() in COOKING_TIME_PRESETS:
         return match.group()

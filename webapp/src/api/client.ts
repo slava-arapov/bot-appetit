@@ -88,7 +88,8 @@ export interface Tag {
   value: string
 }
 
-export type ProfileResponse = Record<TagKind, Tag[]>
+export type TagsByKind = Record<TagKind, Tag[]>
+export type ProfileResponse = TagsByKind & { equipment_options: string[] }
 
 export const getProfile = () => apiFetch<ProfileResponse>('/api/profile')
 
