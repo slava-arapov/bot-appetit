@@ -1,5 +1,4 @@
 from agent.chef import build_system_prompt
-from bot.handlers import _format_profile
 
 
 def test_system_prompt_includes_readable_settings():
@@ -19,8 +18,3 @@ def test_system_prompt_keeps_legacy_free_text():
     assert "Обычно готовит на: семья из пяти" in prompt
     assert "Время на готовку: до получаса" in prompt
 
-
-def test_profile_command_shows_readable_settings():
-    text = _format_profile({"servings": "2", "cooking_time": "any"})
-    assert "Обычно готовит на: 2 порции" in text
-    assert "Время на готовку: время не важно" in text

@@ -18,8 +18,6 @@ from bot.handlers import (
     stats_command,
     cook_command,
     random_command,
-    pantry_command,
-    profile_command,
     reset_command,
 )
 from bot.jobs import notify_expiring
@@ -36,8 +34,6 @@ DEFAULT_COMMANDS = [
     BotCommand("start", "Начать / забыть последние сообщения"),
     BotCommand("cook", "Что приготовить из того, что есть"),
     BotCommand("random", "Случайное блюдо-сюрприз"),
-    BotCommand("pantry", "Мои запасы"),
-    BotCommand("profile", "Моя анкета"),
     BotCommand("reset", "Сбросить память бота"),
 ]
 
@@ -108,8 +104,6 @@ def main():
     app.add_handler(CommandHandler("start", _tracked("start", start)))
     app.add_handler(CommandHandler("cook", _tracked("cook", cook_command)))
     app.add_handler(CommandHandler("random", _tracked("random", random_command)))
-    app.add_handler(CommandHandler("pantry", _tracked("pantry", pantry_command)))
-    app.add_handler(CommandHandler("profile", _tracked("profile", profile_command)))
     app.add_handler(CommandHandler("reset", _tracked("reset", reset_command)))
     app.add_handler(CommandHandler("pending", _tracked("pending", pending_command)))
     app.add_handler(CommandHandler("broadcast", _tracked("broadcast", broadcast_command)))
