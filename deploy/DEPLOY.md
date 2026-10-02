@@ -181,15 +181,19 @@ sudo mkdir -p /var/www/botappetit
 sudo chown botappetit:botappetit /var/www/botappetit
 which rsync || sudo apt install -y rsync
 
-# 3. Конфиг nginx (из репозитория)
+# 3. Сертификат. На чистом сервере сначала выпусти его через default-сервер nginx (он на :80 принимает любые хосты
+#    и отдаёт /var/www/html), потому что конфиг из репозитория уже ссылается на файлы сертификата
+sudo certbot certonly --webroot -w /var/www/html -d botappetit.goida.root.sx
+
+# 4. Конфиг nginx (из репозитория). Домен botappetit.goida.root.sx должен жить ТОЛЬКО в этом файле:
+#    если certbot --nginx дописал блоки в sites-enabled/default, удали их оттуда, иначе nginx -t
+#    ругнётся на дублирующиеся server_name
 sudo cp ~/bot-appetit/deploy/nginx-botappetit.conf /etc/nginx/sites-available/botappetit.goida.root.sx
 sudo ln -s /etc/nginx/sites-available/botappetit.goida.root.sx /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 
-# 4. Сертификат. Посмотри, что уже выпущено; если есть wildcard *.goida.root.sx — используй его пути
-#    в блоке listen 443 ssl, иначе выпусти отдельный (certbot сам допишет HTTPS и редирект)
-sudo certbot certificates
-sudo certbot --nginx -d botappetit.goida.root.sx
+# 5. Проверь автопродление
+sudo certbot renew --dry-run
 ```
 
 Статика появится после первого деплоя через CI (или вручную: `npm run build` в `webapp/` и `rsync -a --delete webapp/dist/ /var/www/botappetit/`).
