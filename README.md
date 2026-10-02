@@ -30,7 +30,7 @@ python main.py
 
 ## Mini App (разработка)
 
-Фронтенд Telegram Mini App живёт в `webapp/` (Vue 3 + TypeScript + Vite), API — в `webapp_api/` (FastAPI, поднимается внутри процесса бота вместе с ним). Дизайн — `docs/telegram-mini-app.md` (что делает), `docs/telegram-mini-app-dev-env.md` (каркас) и `docs/telegram-mini-app-implementation.md` (как построено, срезы, отступления, известные ограничения). Разделы: хаб, Запасы, Профиль, Настройки.
+Фронтенд Telegram Mini App живёт в `webapp/` (Vue 3 + TypeScript + Vite), API — в `webapp_api/` (FastAPI, поднимается внутри процесса бота вместе с ним). Дизайн — `docs/telegram-mini-app.md` (что делает), `docs/telegram-mini-app-dev-env.md` (каркас) и `docs/telegram-mini-app-implementation.md` (как построено, срезы, отступления, известные ограничения). Разделы: хаб, Запасы, Профиль, Настройки, Сброс (забыть переписку, пройти анкету заново или стереть всю память).
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt
@@ -64,6 +64,7 @@ cd webapp && npm run dev        # фронтенд на http://localhost:5173
 |----------------------|--------------------------------------------------------|
 | `/pending`           | Список заявок на доступ, с кнопками одобрить/отклонить |
 | `/broadcast <текст>` | Разослать сообщение всем одобренным пользователям      |
+| `/stats`             | Число пользователей по статусам и счётчики вызовов команд |
 
 ## Структура
 

@@ -8,7 +8,7 @@
 - Зачем: быстро править структурированную память тапом, без диалога с LLM.
 - Для кого: `approved`-пользователи бота (десятки человек). Разработчик один, фронтенд-бэкграунд.
 - Ключевые ограничения: API живёт в процессе бота и использует общее соединение `aiosqlite`; авторизация только по `initData`; Vue 3 + TS без Pinia; цвета только из `themeParams`.
-- Не делаем: историю блюд, онбординг в Mini App, деплой/HTTPS/туннель, удаление текстовых команд `/pantry` и `/profile` (на них ставится `TODO`).
+- Не делаем: историю блюд, онбординг в Mini App, деплой/HTTPS/туннель, текстовые команды памяти.
 
 ## Допущения
 
@@ -16,7 +16,7 @@
 2. **`out` — только сигнал в `memory_update`.** От LLM `out` по-прежнему означает «товар закончился, удалить». В БД и в API `out` не хранится; старые строки с `out` мигрируются в `to_buy`.
 3. **Поток из чата.** Закончилось → товар удалён (`out`) → бот в том же ответе спрашивает про список покупок → при согласии следующим шагом LLM шлёт `to_buy`. «Купил» из чата → `have`.
 4. **Точечные операции вместо load→save.** Записи pantry и теги профиля имеют `id`; API и бот меняют данные точечными SQL-операциями. Это снимает гонку между тапом в Mini App и правкой от бота.
-5. **`servings`/`cooking_time`.** Mini App пишет канонические значения (`"4"`, `"15"/"30"/"60"/"any"`). Старые свободные строки разбираются на чтении, при неудаче поле пустое. В промпт и текстовый `/profile` значения уходят человекочитаемыми строками. Схема БД не меняется.
+5. **`servings`/`cooking_time`.** Mini App пишет канонические значения (`"4"`, `"15"/"30"/"60"/"any"`). Старые свободные строки разбираются на чтении, при неудаче поле пустое. В промпт значения уходят человекочитаемыми строками. Схема БД не меняется.
 6. Дубликаты (название товара, тег внутри `kind`) определяются без учёта регистра в Python через `casefold()`: `lower()` в SQLite не понимает кириллицу.
 7. Захардкоженный список техники для чеклиста лежит на фронте; кастомные пункты берутся из `profile_tags`.
 8. Нагрузка небольшая, задержки локальные; безопасность: все запросы ограничены `user_id` из проверенного `initData`, чужие `id` дают 404; валидация — pydantic-модели.
@@ -61,7 +61,7 @@
 Данные (`memory/store.py`):
 - `get_settings(user_id)` → `{servings: int | None, cooking_time: "15"|"30"|"60"|"any"|None}`. `servings` — первое число из строки в диапазоне 1–8, иначе `None`; `cooking_time` — число из 15/30/60 или «не важно», иначе `None`.
 - `set_settings(user_id, *, servings=..., cooking_time=...)` обновляет только переданные поля через `INSERT … ON CONFLICT DO UPDATE` по `profiles`, не затрагивая `onboarding_*` и контекст.
-- `describe_servings()` / `describe_cooking_time()` для промпта агента и текстового `/profile` («4 порции», «до 30 минут», «время не важно»). Перед реализацией прочитать `agent/chef.py` и `/profile` и найти все места вывода этих полей.
+- `describe_servings()` / `describe_cooking_time()` для промпта агента («4 порции», «до 30 минут», «время не важно»). Перед реализацией прочитать `agent/chef.py` и найти все места вывода этих полей.
 
 API: `GET /api/settings`; `PATCH /api/settings` — любое подмножество полей (`servings`: int 1–8, `cooking_time`: `Literal`), пустое тело → 422, в ответе обновлённые значения.
 
@@ -80,7 +80,6 @@ API: `GET /api/settings`; `PATCH /api/settings` — любое подмноже�
 Бот и промпт:
 - `agent/chef.py`: правило «закончилось → `out`, затем спроси про список покупок; согласился → `to_buy`; купил → `have`»; в рецептах `to_buy` считается отсутствующим продуктом.
 - `notify_expiring` пропускает `to_buy`.
-- Текстовый `/pantry` рисует секцию «Нужно купить»; на `/pantry` и `/profile` — `TODO` на будущее удаление.
 
 API: `GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`; `name` 1–80 символов после trim, `status: Literal["have","low","to_buy"]`, `quantity`, `expiry_date` (ISO). `EXPIRY_WARNING_DAYS` отдаётся API, не дублируется на фронте.
 
@@ -131,7 +130,6 @@ API: `GET /api/profile` → `{restrictions, equipment, likes, dislikes}` (эле
 
 - История блюд, онбординг в Mini App.
 - Деплой, HTTPS, туннель и проверка внутри Telegram.
-- Удаление текстовых команд `/pantry` и `/profile`.
 
 ## Статус реализации
 
@@ -139,7 +137,7 @@ API: `GET /api/profile` → `{restrictions, equipment, likes, dislikes}` (эле
 
 | Срез | Бэкенд | Фронтенд |
 |---|---|---|
-| 1. Настройки | `get_settings`/`set_settings`, `GET/PATCH /api/settings`; читаемые «4 порции»/«до 30 минут» в промпте и `/profile` | `SettingsView`, степпер, `SegmentedControl`, `useSettings` (дебаунс 300 мс, откат), `useSnackbar`, `haptic`, `BackButton` |
+| 1. Настройки | `get_settings`/`set_settings`, `GET/PATCH /api/settings`; читаемые «4 порции»/«до 30 минут» в промпте | `SettingsView`, степпер, `SegmentedControl`, `useSettings` (дебаунс 300 мс, откат), `useSnackbar`, `haptic`, `BackButton` |
 | 2. Pantry | `to_buy`, точечные операции с `id`, переписанный `apply_pantry_update`, миграция `out → to_buy`, правила в промпте, `GET/POST/PATCH/DELETE /api/pantry` | `PantryView`, строка со свайпом, форма (bottom sheet), `usePantry`, отмена удаления |
 | 3. Профиль | `list_tags`/`add_tag`/`remove_tag`, `apply_memory_update` без `save_profile`, `GET /api/profile`, `POST/DELETE /api/profile/tags` | `ProfileView`, `TagGroup`, `EquipmentChecklist`, `useProfile` |
 | 4. Хаб | `get_summary`, `GET /api/summary` | карточки с иконками и подписями, `useSummary`, `utils/summary.ts` (склонения) |
@@ -162,4 +160,4 @@ API: `GET /api/profile` → `{restrictions, equipment, likes, dislikes}` (эле
 
 ### Что дальше (вне v1)
 
-История блюд, деплой (HTTPS, хостинг фронтенда), проверка в самом Telegram через туннель, удаление текстовых `/pantry` и `/profile` (на них стоят `TODO(mini-app)`).
+История блюд, деплой (HTTPS, хостинг фронтенда), проверка в самом Telegram через туннель.

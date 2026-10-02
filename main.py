@@ -65,7 +65,7 @@ async def _set_menu_button(bot, url: str):
 
 
 def _tracked(name: str, handler):
-    """Оборачивает командный хендлер, инкрементируя счётчик вызовов в data/stats.json."""
+    """Оборачивает командный хендлер, инкрементируя счётчик вызовов в таблице stats (SQLite)."""
     async def wrapper(update, context):
         await record_command(name)
         await handler(update, context)

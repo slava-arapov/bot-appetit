@@ -22,11 +22,11 @@
 
 ## Шаг 3. Хендлеры и колбэки
 
-- [ ] `bot/handlers.py`: везде, где вызывается `run_onboarding`/`current_onboarding_question` (`_show_onboarding_question`, обработка текста, одобрение заявки, `/reset onboarding`), отправлять `view.text` с `reply_markup=view.keyboard`.
+- [ ] `bot/handlers.py`: везде, где вызывается `run_onboarding`/`current_onboarding_question` (`_show_onboarding_question`, обработка текста, одобрение заявки), отправлять `view.text` с `reply_markup=view.keyboard`.
 - [ ] `handle_onboarding_callback` (`pattern=r"^onb:"`): гейт `_require_approved`; разбор `onb:servings:<n>`, `onb:time:<preset>`, `onb:eq:<idx|other|done>`; редактирование сообщения в «✓ …» без клавиатуры, `BadRequest` → новое сообщение; устаревший колбэк → `query.answer("Этот вопрос уже неактуален")`.
 - [ ] Техника: `context.user_data["onb_equipment"]` (набор индексов), переключение перерисовывает клавиатуру через `edit_message_reply_markup`; «Другое» ставит `user_data["onb_awaiting_custom"]`, следующий текст добавляется к выбору (`normalize_tag`) и клавиатура рисуется заново; «Готово» пишет итог в `equipment`, сбрасывает состояние.
 - [ ] Текст на шаге техники без флага трактуется как «Другое».
-- [ ] `/start` и `/reset onboarding` сбрасывают `onb_*` в `user_data`.
+- [ ] `/start` сбрасывает `onb_*` в `user_data`.
 - [ ] `main.py`: `app.add_handler(CallbackQueryHandler(handle_onboarding_callback, pattern=r"^onb:"))`.
 - Тесты (`tests/test_onboarding_handlers.py`, моки `Update`/`CallbackQuery`): переключение и «Готово», «Другое», потеря `user_data`, неподтверждённый пользователь, `BadRequest` при редактировании.
 - Готово, когда: ручная проверка с тестовым ботом проходит всю анкету кнопками и текстом.
@@ -58,7 +58,7 @@
 
 1. Деплой кода (бот + Mini App вместе, API вне флага).
 2. На VPS: бэкап `bot.db` (делает скрипт), `migrate_normalize_settings.py` dry-run, затем `--apply`.
-3. Проверить `/profile` и Mini App у пары существующих пользователей.
+3. Проверить Mini App у пары существующих пользователей.
 
 ## Замечания
 

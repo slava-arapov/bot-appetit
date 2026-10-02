@@ -51,7 +51,7 @@ user message
 
 ### Mini App: API и dev-окружение
 
-Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). План реализации по срезам — `docs/telegram-mini-app-implementation.md`. Готовы все срезы v1: «Настройки» (`GET/PATCH /api/settings`), «Pantry» (`GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`), «Профиль» (`GET /api/profile` — теги по группам плюс `equipment_options`, список техники для чек-листа из `config.EQUIPMENT_OPTIONS`; `POST /api/profile/tags`, `DELETE /api/profile/tags/{id}`) и хаб (`GET /api/summary` — счётчики для подписей карточек; при ошибке карточки остаются без подписей). Точечные операции с `id` (`add_pantry_item`/`update_pantry_item`/`delete_pantry_item`, `add_tag`/`remove_tag`) живут в `memory/store.py` и используются и API, и ботом (`apply_pantry_update`, `apply_memory_update`), чтобы правка из Mini App не терялась из-за load→save всего списка. `save_profile` (полная перезапись с пересозданием тегов) остался только для онбординга и сбросов, поэтому `id` тегов нестабильны между сессиями: фронт при 404 тихо перезапрашивает профиль. UI-библиотека фронта — Vant (выборочно: `SwipeCell`, `Popup`, `Skeleton`), остальное написано самим.
+Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). План реализации по срезам — `docs/telegram-mini-app-implementation.md`. Готовы все разделы: «Настройки» (`GET/PATCH /api/settings`), «Pantry» (`GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`), «Профиль» (`GET /api/profile` — теги по группам плюс `equipment_options`, список техники для чек-листа из `config.EQUIPMENT_OPTIONS`; `POST /api/profile/tags`, `DELETE /api/profile/tags/{id}`) хаб (`GET /api/summary` — счётчики для подписей карточек; при ошибке карточки остаются без подписей) и «Сброс» (`POST /api/reset/{chat|onboarding|all}` — те же действия, что раньше давала команда `/reset`; подтверждение опасных действий — на фронте, после `onboarding`/`all` анкета сразу переводится на первый вопрос, а пользователь пишет боту `/start`). Точечные операции с `id` (`add_pantry_item`/`update_pantry_item`/`delete_pantry_item`, `add_tag`/`remove_tag`) живут в `memory/store.py` и используются и API, и ботом (`apply_pantry_update`, `apply_memory_update`), чтобы правка из Mini App не терялась из-за load→save всего списка. `save_profile` (полная перезапись с пересозданием тегов) остался только для онбординга и сбросов, поэтому `id` тегов нестабильны между сессиями: фронт при 404 тихо перезапрашивает профиль. UI-библиотека фронта — Vant (выборочно: `SwipeCell`, `Popup`, `Skeleton`), остальное написано самим.
 
 - `webapp_api/` — FastAPI в том же event loop, что и бот: `server.py:start_api()/stop_api()` (uvicorn без перехвата сигналов, при ошибке старта — `RuntimeError`) вызываются из `main.py:_post_init/_post_shutdown`. Использует общее соединение `memory/db.py:get_conn()`. Отключить нельзя — API стартует вместе с ботом.
 - Авторизация одна и без dev-обходов: `webapp_api/deps.py:current_user` читает `Authorization: tma <initData>`, `auth.py:validate_init_data` проверяет HMAC-подпись и `auth_date` (`INITDATA_MAX_AGE`), затем статус `approved` в `users` (401 — плохой initData, 403 — нет доступа).
@@ -126,7 +126,7 @@ Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` �
 
 ## Команды бота
 
-Все команды, кроме `/pending` и `/broadcast`, доступны только `approved`-пользователям — гейт `_require_approved()` в `bot/handlers.py`, тот же, что у обычных сообщений (new → заявка в pending, pending → молчим, rejected → однократное уведомление).
+Все команды, кроме админских (`/pending`, `/broadcast`, `/stats`), доступны только `approved`-пользователям — гейт `_require_approved()` в `bot/handlers.py`, тот же, что у обычных сообщений (new → заявка в pending, pending → молчим, rejected → однократное уведомление).
 
 | Команда | Кому | Что делает | LLM? |
 |---|---|---|---|
@@ -135,12 +135,13 @@ Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` �
 | `/random` | approved | шорткат: промпт «случайное блюдо-сюрприз с учётом вкусов/ограничений» | да |
 | `/pending` | `ADMIN_USER_ID` | список заявок `pending` с кнопками ✅/❌ | нет |
 | `/broadcast <текст>` | `ADMIN_USER_ID` | рассылка всем `approved`-пользователям | нет |
+| `/stats` | `ADMIN_USER_ID` | число пользователей по статусам и счётчики вызовов команд (`memory/stats.py`) | нет |
 
 `/cook` и `/random` — не отдельная ветка логики, а просто заготовленный `user_text`, дальше идёт тот же путь, что и у любого сообщения (`_run_agent_reply()` в `bot/handlers.py`). Запасы, профиль и сброс памяти в боте командами не доступны — только через Mini App (раздел «Сброс», `POST /api/reset/{chat|onboarding|all}`; логика — `memory/store.py`: `reset_context`, `reset_onboarding`, `reset_all`).
 
 ### Меню команд в Telegram (`/`-подсказки)
 
-Регистрируется в `main.py:_post_init()` через `bot.set_my_commands()`. Обычным пользователям — `DEFAULT_COMMANDS`. Админу — `ADMIN_COMMANDS` (то же плюс `/pending`, `/broadcast`) через `scope=BotCommandScopeChat(chat_id=ADMIN_USER_ID)`: Telegram показывает разное меню в зависимости от того, в каком чате пользователь открыл `/`. Работает только если Telegram уже знает `chat_id` пользователя (т.е. тот хоть раз писал боту) — для админа это не проблема, он лениво регистрируется как `approved` в `users.json` при первом же обращении (`memory/users.py:ensure_approved()`, вызывается из `_resolve_access()`), а не одобряется вручную, как остальные.
+Регистрируется в `main.py:_post_init()` через `bot.set_my_commands()`. Обычным пользователям — `DEFAULT_COMMANDS`. Админу — `ADMIN_COMMANDS` (то же плюс `/pending`, `/broadcast`, `/stats`) через `scope=BotCommandScopeChat(chat_id=ADMIN_USER_ID)`: Telegram показывает разное меню в зависимости от того, в каком чате пользователь открыл `/`. Работает только если Telegram уже знает `chat_id` пользователя (т.е. тот хоть раз писал боту) — для админа это не проблема, он лениво регистрируется как `approved` в таблице `users` при первом же обращении (`memory/users.py:ensure_approved()`, вызывается из `_resolve_access()`), а не одобряется вручную, как остальные.
 
 ### Роутинг `CallbackQueryHandler`
 
