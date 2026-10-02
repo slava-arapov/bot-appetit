@@ -173,4 +173,5 @@ Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` �
 | `S3_ENDPOINT_URL` | нужен для S3-совместимых хранилищ не-AWS — без него `boto3` идёт на настоящий AWS. Пустой = обычный AWS S3 |
 | `BACKUP_REPO_PATH` | нужен при `BACKUP_BACKEND=git` — путь к локальному клону приватного репо |
 | `API_HOST`, `API_PORT` | где слушает API Mini App (по умолчанию `127.0.0.1:8080`) |
+| `WEBAPP_URL` | публичный `https://`-адрес Mini App (например, `https://botappetit.goida.root.sx`). Если задан, `main.py:_post_init` ставит кнопку меню «Кухня», открывающую его. Пусто — кнопку не трогаем. Не-https адрес пропускается с предупреждением в логе |
 | `INITDATA_MAX_AGE` | сколько секунд `initData` считается свежим (по умолчанию 86400) |

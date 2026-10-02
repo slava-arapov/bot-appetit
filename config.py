@@ -56,3 +56,5 @@ EQUIPMENT_OPTIONS = [
 API_HOST = os.environ.get("API_HOST", "127.0.0.1")
 API_PORT = int(os.environ.get("API_PORT", "8080"))
 INITDATA_MAX_AGE = int(os.environ.get("INITDATA_MAX_AGE", "86400"))  # секунды
+# Публичный HTTPS-адрес Mini App: если задан, бот при старте ставит кнопку меню, открывающую его.
+WEBAPP_URL = os.environ.get("WEBAPP_URL", "").strip()

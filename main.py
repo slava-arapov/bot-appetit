@@ -1,10 +1,11 @@
 import datetime
 import logging
 
-from telegram import BotCommand, BotCommandScopeChat
+from telegram import BotCommand, BotCommandScopeChat, MenuButtonWebApp, WebAppInfo
+from telegram.error import TelegramError
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, MessageHandler, filters
 
-from config import ADMIN_USER_ID, API_HOST, API_PORT, TELEGRAM_TOKEN
+from config import ADMIN_USER_ID, API_HOST, API_PORT, TELEGRAM_TOKEN, WEBAPP_URL
 from bot.handlers import (
     start,
     handle_message,
@@ -47,6 +48,29 @@ ADMIN_COMMANDS = DEFAULT_COMMANDS + [
 ]
 
 
+MENU_BUTTON_TEXT = "Кухня"
+
+
+async def _set_menu_button(bot, url: str):
+    """Ставит кнопку меню, открывающую Mini App. Пустой url — кнопку не трогаем.
+
+    Telegram принимает для Mini App только https-адрес. Ошибка Telegram не должна ронять бота:
+    он и без кнопки работает, а причина видна в логе.
+    """
+    url = url.strip()
+    if not url:
+        return
+    if not url.startswith("https://"):
+        logging.warning("WEBAPP_URL должен начинаться с https:// — кнопка меню не установлена: %r", url)
+        return
+    try:
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(text=MENU_BUTTON_TEXT, web_app=WebAppInfo(url=url))
+        )
+    except TelegramError:
+        logging.exception("Не удалось установить кнопку меню Mini App (%s)", url)
+
+
 def _tracked(name: str, handler):
     """Оборачивает командный хендлер, инкрементируя счётчик вызовов в data/stats.json."""
     async def wrapper(update, context):
@@ -63,6 +87,7 @@ async def _post_init(app: Application):
         ADMIN_COMMANDS,
         scope=BotCommandScopeChat(chat_id=ADMIN_USER_ID),
     )
+    await _set_menu_button(app.bot, WEBAPP_URL)
 
 
 async def _post_shutdown(app: Application):

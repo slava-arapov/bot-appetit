@@ -36,6 +36,10 @@ ADMIN_USER_ID=...
 # Если порт 8080 на VPS занят — бот упадёт при старте; переопредели порт:
 # API_PORT=8081
 
+# Адрес Mini App (nginx + HTTPS, см. раздел «Mini App: nginx и сертификат»). При старте бот сам ставит кнопку меню.
+# Пусто — кнопки нет.
+WEBAPP_URL=https://botappetit.goida.root.sx
+
 BACKUP_BACKEND=s3
 S3_BUCKET=...
 S3_PREFIX=bot-appetit
@@ -207,7 +211,14 @@ curl -s  https://botappetit.goida.root.sx/api/summary    # 401: запрос д�
 
 `502` на `/api/` — бот не запущен или `API_PORT` в `.env` не совпадает с `proxy_pass` в конфиге.
 
-Кнопка открытия Mini App в чате: BotFather → `/mybots` → бот → **Bot Settings → Menu Button → Configure menu button**, URL `https://botappetit.goida.root.sx`.
+Кнопка открытия Mini App в чате ставится ботом сама при старте, если в `.env` задан `WEBAPP_URL`:
+
+```bash
+echo 'WEBAPP_URL=https://botappetit.goida.root.sx' >> ~/bot-appetit/.env
+sudo systemctl restart bot-appetit
+```
+
+Если кнопка раньше была настроена через BotFather, значение из кода её перезапишет. Ошибки установки видны в `journalctl -u bot-appetit`.
 
 ---
 
