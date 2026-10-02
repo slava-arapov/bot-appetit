@@ -2,6 +2,8 @@
 
 Дизайн-документ. Зафиксирован по итогам обсуждения 2026-10-01. Дополняет `docs/telegram-mini-app.md` (сам Mini App) — здесь только каркас окружения, без экранов. Реализация — отдельным шагом.
 
+**Статус:** каркас реализован; экраны и бизнес-эндпоинты поверх него построены (см. `docs/telegram-mini-app-implementation.md`). Ниже описан исходный каркас, поэтому упоминания «заглушек» и проверки через `/api/me` на хабе — исторические.
+
 ## Понимание задачи
 
 - Что делаем: каркас для разработки Mini App — фронтенд `webapp/`, HTTP API внутри процесса бота, авторизация по `initData`, dev-режим в обычном браузере.
@@ -33,7 +35,7 @@
 | Монорепо, папка `webapp/` | Отдельный репозиторий | API и фронт меняются вместе |
 | Два терминала: `python main.py` + `npm run dev`, прокси `/api` в Vite | Один скрипт `dev:all` | Нет лишней зависимости ради экономии терминала; нет CORS |
 | API включается вместе с ботом, без флага | Флаг `ENABLE_WEBAPP_API` | Решение пользователя; проще конфигурация |
-| Состояние во view локально, без Pinia | Pinia сразу | YAGNI, добавим при появлении общего кеша |
+| Состояние во view локально, без Pinia | Pinia сразу | YAGNI, добавим при появлении общего кеша. Остаётся в силе: состояние живёт в composables на раздел, общий только снекбар |
 | ESLint (Vue + TS стандартный) + Prettier, Vitest | — | Стандартный набор |
 
 ## Финальный дизайн
@@ -44,19 +46,19 @@
 - `server.py` — `start_api()` / `stop_api()`: `uvicorn.Server` запускается задачей в том же event loop, что и PTB; перехват сигналов у uvicorn отключён (`capture_signals` — no-op), чтобы не мешать остановке бота. `sys.exit` uvicorn при ошибке старта превращается в `RuntimeError`.
 - `auth.py` — `validate_init_data()`: проверяет HMAC (секрет = `HMAC_SHA256("WebAppData", TELEGRAM_TOKEN)`, подпись от отсортированных `key=value`), `auth_date` не старше `INITDATA_MAX_AGE`, наличие `user`; иначе `InitDataError`.
 - `deps.py` — зависимость `current_user`: читает `Authorization: tma <initData>`, вызывает `validate_init_data`, проверяет статус `approved` в `users`. Иначе 401 (плохой/просроченный initData) или 403 (нет доступа).
-- `routes.py` — пока только `GET /api/me` → `{user_id, username}`: проверка сквозной цепочки.
+- `routes.py` — в каркасе только `GET /api/me` → `{user_id, username}`: проверка сквозной цепочки. `/api/me` остался (его проверяют тесты авторизации); бизнес-эндпоинты добавлены позже, см. implementation-документ.
 - Интеграция: старт в `main.py:_post_init` после `init_db()`, остановка в `_post_shutdown`; общее соединение — `memory/db.py:get_conn()`. Если порт занят — бот падает при старте.
 - Конфиг (`config.py`): `API_HOST`, `API_PORT`, `INITDATA_MAX_AGE`.
 
 ### Frontend (`webapp/`)
 
-- Vite + Vue 3 (`<script setup>`) + TypeScript + Vue Router (`/`, `/pantry`, `/profile`, `/settings` — заглушки) + Vitest + ESLint + Prettier.
+- Vite + Vue 3 (`<script setup>`) + TypeScript + Vue Router (`/`, `/pantry`, `/profile`, `/settings`; в каркасе — заглушки, позже заменены экранами) + Vitest + ESLint + Prettier.
 - `src/telegram/index.ts` — обёртка над `Telegram.WebApp`: `ready()`, `themeParams` → CSS-переменные, `themeChanged`, `viewportStableHeight`.
 - `src/telegram/mock.ts` — если вне Telegram и `import.meta.env.DEV`: создаёт `window.Telegram.WebApp` с `initData` (запрашивается у `/__dev/init-data`), тестовыми `themeParams` (с переключателем light/dark), заглушками `BackButton`/`MainButton`/`HapticFeedback`. В prod-сборку не попадает.
 - `src/api/client.ts` — `fetch('/api/...')` с `Authorization: tma <initData>`.
 - `vite.config.ts` — прокси `/api` → `http://127.0.0.1:8080`; Vite слушает `127.0.0.1` (на `::1` по умолчанию соединения блокировались).
 - `dev/init-data-plugin.ts` — dev-плагин `/__dev/init-data`: читает `../.env`, подписывает свежий `initData` через `node:crypto` для `ADMIN_USER_ID`; только `vite serve`.
-- Хаб при открытии вызывает `/api/me` и показывает user_id — признак, что подпись, прокси и авторизация работают вместе.
+- В каркасе хаб вызывал `/api/me` и показывал user_id — признак, что подпись, прокси и авторизация работают вместе. Сейчас хаб вместо этого запрашивает `/api/summary` (подписи карточек), отладочный вывод убран.
 
 ### Зависимости и репозиторий
 

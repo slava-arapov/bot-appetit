@@ -6,6 +6,8 @@ const THEMES: Record<'light' | 'dark', ThemeParams> = {
     text_color: '#000000',
     hint_color: '#999999',
     button_color: '#2481cc',
+    button_text_color: '#ffffff',
+    destructive_text_color: '#d93025',
     secondary_bg_color: '#f1f1f1',
   },
   dark: {
@@ -13,6 +15,8 @@ const THEMES: Record<'light' | 'dark', ThemeParams> = {
     text_color: '#ffffff',
     hint_color: '#aaaaaa',
     button_color: '#8774e1',
+    button_text_color: '#ffffff',
+    destructive_text_color: '#ec3942',
     secondary_bg_color: '#0f0f0f',
   },
 }

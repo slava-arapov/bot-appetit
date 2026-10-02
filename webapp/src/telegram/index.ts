@@ -5,6 +5,8 @@ const THEME_VARS: Record<keyof ThemeParams, string> = {
   text_color: '--tg-text',
   hint_color: '--tg-hint',
   button_color: '--tg-button',
+  button_text_color: '--tg-button-text',
+  destructive_text_color: '--tg-destructive',
   secondary_bg_color: '--tg-secondary-bg',
 }
 
@@ -26,11 +28,17 @@ export function applyViewport(app: WebApp, root: HTMLElement = document.document
   root.style.setProperty('--tg-viewport-height', `${app.viewportStableHeight}px`)
 }
 
+/** Схема клиента Telegram (light/dark) для стилей, которым не хватает themeParams, например цветов статусов. */
+export function applyScheme(app: WebApp, root: HTMLElement = document.documentElement) {
+  root.dataset.scheme = app.colorScheme
+}
+
 /** Сообщает Telegram, что приложение готово, и держит тему и высоту в синхроне с клиентом. */
 export function initTelegram() {
   const app = getWebApp()
   const sync = () => {
     applyTheme(app.themeParams)
+    applyScheme(app)
     applyViewport(app)
   }
   sync()

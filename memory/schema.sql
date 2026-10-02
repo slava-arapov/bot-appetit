@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS pantry_items (
   id INTEGER PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(user_id),
   name TEXT NOT NULL,
-  status TEXT NOT NULL DEFAULT 'have',
+  status TEXT NOT NULL DEFAULT 'have',   -- have / low / to_buy (to_buy = список покупок)
   added_date TEXT,
   expiry_date TEXT,
   quantity TEXT
@@ -58,3 +58,6 @@ CREATE TABLE IF NOT EXISTS stats (
   key TEXT PRIMARY KEY,
   value INTEGER NOT NULL DEFAULT 0
 );
+
+-- Миграция: раньше «закончилось» могло лежать как out; теперь это позиция списка покупок. Идемпотентно.
+UPDATE pantry_items SET status = 'to_buy' WHERE status = 'out';

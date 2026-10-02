@@ -17,7 +17,35 @@ async def init_db() -> aiosqlite.Connection:
     with open(SCHEMA_PATH, encoding="utf-8") as f:
         await _conn.executescript(f.read())
     await _conn.commit()
+    await _lowercase_tags(_conn)
     return _conn
+
+
+async def _lowercase_tags(conn: aiosqlite.Connection):
+    """Миграция: теги профиля хранятся в нижнем регистре. Идемпотентна.
+
+    Приводит старые значения к нижнему регистру и сливает получившиеся дубли (остаётся тег с меньшим id).
+    Делается в Python, а не в SQL: SQLite lower() не понимает кириллицу.
+    """
+    cursor = await conn.execute("SELECT id, user_id, kind, value FROM profile_tags ORDER BY id")
+    seen: set[tuple[int, str, str]] = set()
+    renames: list[tuple[str, int]] = []
+    duplicates: list[tuple[int]] = []
+    for row in await cursor.fetchall():
+        value = row["value"].strip().lower()
+        key = (row["user_id"], row["kind"], value)
+        if key in seen:
+            duplicates.append((row["id"],))
+            continue
+        seen.add(key)
+        if value != row["value"]:
+            renames.append((value, row["id"]))
+
+    if not renames and not duplicates:
+        return
+    await conn.executemany("UPDATE profile_tags SET value = ? WHERE id = ?", renames)
+    await conn.executemany("DELETE FROM profile_tags WHERE id = ?", duplicates)
+    await conn.commit()
 
 
 async def close_db():

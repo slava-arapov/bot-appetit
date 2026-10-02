@@ -1,0 +1,63 @@
+/* Базовые токены. Цвета приходят из Telegram themeParams как --tg-* (см. src/telegram/index.ts). */
+:root {
+  --tap-size: 44px;
+  --radius: 12px;
+  --gap: 12px;
+
+  /* Цвета статусов запасов: смысловые, не из themeParams. Подобраны под контраст 4.5:1 на фоне темы. */
+  --status-have: #1b6e3a;
+  --status-low: #8a5100;
+  --status-buy: #0b5cad;
+
+  /* Vant берёт цвета из темы клиента Telegram */
+  --van-background: var(--tg-bg);
+  --van-background-2: var(--tg-secondary-bg);
+  --van-text-color: var(--tg-text);
+  --van-text-color-2: var(--tg-hint);
+  --van-primary-color: var(--tg-button);
+  --van-active-color: var(--tg-secondary-bg);
+  --van-skeleton-row-background: var(--tg-secondary-bg);
+  --van-skeleton-title-background: var(--tg-secondary-bg);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-height: var(--tg-viewport-height, 100vh);
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+}
+
+.page {
+  padding: 16px;
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+}
+
+.page__title {
+  margin: 0 0 16px;
+  font-size: 22px;
+}
+
+:root[data-scheme='dark'] {
+  --status-have: #6fd08c;
+  --status-low: #f0b45a;
+  --status-buy: #8ab9f5;
+}

@@ -32,10 +32,10 @@ user message
 
 | Таблица | Что хранит |
 |---|---|
-| `profiles` + `profile_tags` | вкусы/ограничения/техника (`profile_tags`, kind = likes/dislikes/restrictions/equipment), `servings`, `cooking_time`, онбординг-статус, текущий контекст |
+| `profiles` + `profile_tags` | вкусы/ограничения/техника (`profile_tags`, kind = likes/dislikes/restrictions/equipment; значения хранятся в **нижнем регистре**, см. `memory/store.py:normalize_tag`), `servings`, `cooking_time`, онбординг-статус, текущий контекст |
 | `history` | блюда с оценками и датами |
 | `context_messages` | последние 20 сообщений диалога для LLM |
-| `pantry_items` | запасы продуктов: `name`, `status` (have/low/out), `added_date`, опционально `expiry_date` и `quantity` (свободная строка, например "2 пачки") |
+| `pantry_items` | запасы продуктов: `name`, `status` (have/low/to_buy), `added_date`, опционально `expiry_date` и `quantity` (свободная строка, например "2 пачки") |
 | `users` | реестр доступа (status/username/requested_at/approved_at/rejected_at), см. `memory/users.py` — раньше был отдельным `data/users.json` |
 | `stats` | счётчики вызовов команд (key/value), см. `memory/stats.py` |
 
@@ -43,17 +43,19 @@ user message
 
 Почему SQLite, а не JSON-файлы или полноценный сервер БД (Postgres) — см. Decision Log в `docs/db-migration.md`. Переход с JSON выполнен разовым скриптом `migrate_to_sqlite.py` (запускается вручную, ничего не удаляет — легаси `data/<user_id>/*.json` стирается вручную после проверки).
 
-Запасы (`pantry_items`) и техника (`equipment`) обновляются так же, как остальная память — через `memory_update` от LLM, без отдельных команд бота. Список покупок не хранится отдельно: при предложении рецепта бот сравнивает ингредиенты с `pantry_items` и называет недостающее прямо в ответе.
+Запасы (`pantry_items`) и техника (`equipment`) обновляются так же, как остальная память — через `memory_update` от LLM, без отдельных команд бота. Список покупок — это позиции `pantry_items` со статусом `to_buy` (отдельной таблицы нет). В `memory_update.pantry` `out` значит «закончилось — убрать из запасов» и в БД не хранится; бот в том же ответе спрашивает, добавить ли продукт в покупки, и при согласии следующим сообщением шлёт `to_buy`. «Купил» → `have`. Названия сопоставляются без учёта регистра (`casefold()` в Python: `lower()` в SQLite не понимает кириллицу). При предложении рецепта `to_buy` считается отсутствующим продуктом, `notify_expiring` такие позиции пропускает. Старые строки со статусом `out` мигрируют в `to_buy` в `schema.sql` при старте.
+
+Теги профиля (`profile_tags`) приводятся к нижнему регистру везде, где пишутся: `add_tag`, `save_profile` (онбординг; дубли схлопываются) и `apply_memory_update`. При старте `memory/db.py:_lowercase_tags` идемпотентно переводит в нижний регистр уже сохранённые теги и сливает получившиеся дубли («Духовка» и «духовка» → один тег с меньшим `id`). Делается в Python: `lower()` в SQLite не понимает кириллицу. Названия продуктов в `pantry_items` не нормализуются, они сохраняют регистр, но сопоставляются без его учёта.
 
 Ежедневно в 09:00 `bot/jobs.py:notify_expiring` проходит по всем `approved`-пользователям (`memory/users.py:list_approved_user_ids()`) и для каждого проверяет его запасы (`memory/store.py:check_expiring_soon`) на продукты с `expiry_date` в пределах `EXPIRY_WARNING_DAYS` (см. `config.py`) — детерминированно, без вызова LLM. Регистрируется через `app.job_queue.run_daily(...)` в `main.py` (нужен extra `python-telegram-bot[job-queue]`).
 
 ### Mini App: API и dev-окружение
 
-Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). Реализован каркас без экранов; бизнес-эндпоинты (pantry/profile/settings) ещё не написаны.
+Дизайн — `docs/telegram-mini-app.md` (что делает приложение) и `docs/telegram-mini-app-dev-env.md` (каркас и решения). План реализации по срезам — `docs/telegram-mini-app-implementation.md`. Готовы все срезы v1: «Настройки» (`GET/PATCH /api/settings`), «Pantry» (`GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`), «Профиль» (`GET /api/profile`, `POST /api/profile/tags`, `DELETE /api/profile/tags/{id}`) и хаб (`GET /api/summary` — счётчики для подписей карточек; при ошибке карточки остаются без подписей). Точечные операции с `id` (`add_pantry_item`/`update_pantry_item`/`delete_pantry_item`, `add_tag`/`remove_tag`) живут в `memory/store.py` и используются и API, и ботом (`apply_pantry_update`, `apply_memory_update`), чтобы правка из Mini App не терялась из-за load→save всего списка. `save_profile` (полная перезапись с пересозданием тегов) остался только для онбординга и сбросов, поэтому `id` тегов нестабильны между сессиями: фронт при 404 тихо перезапрашивает профиль. UI-библиотека фронта — Vant (выборочно: `SwipeCell`, `Popup`, `Skeleton`), остальное написано самим.
 
 - `webapp_api/` — FastAPI в том же event loop, что и бот: `server.py:start_api()/stop_api()` (uvicorn без перехвата сигналов, при ошибке старта — `RuntimeError`) вызываются из `main.py:_post_init/_post_shutdown`. Использует общее соединение `memory/db.py:get_conn()`. Отключить нельзя — API стартует вместе с ботом.
 - Авторизация одна и без dev-обходов: `webapp_api/deps.py:current_user` читает `Authorization: tma <initData>`, `auth.py:validate_init_data` проверяет HMAC-подпись и `auth_date` (`INITDATA_MAX_AGE`), затем статус `approved` в `users` (401 — плохой initData, 403 — нет доступа).
-- `webapp/`: `src/telegram/` — обёртка над `Telegram.WebApp` (тема → CSS-переменные `--tg-*`, `viewportStableHeight`) и `mock.ts` для браузера (только dev, в prod-бандл не попадает; активируется при пустом `initData`); `src/api/client.ts` — `apiFetch` с заголовком `tma`.
+- `webapp/`: `src/telegram/` — обёртка над `Telegram.WebApp` (тема → CSS-переменные `--tg-*`, `viewportStableHeight`) и `mock.ts` для браузера (только dev, в prod-бандл не попадает; активируется при пустом `initData`); `src/api/client.ts` — `apiFetch` с заголовком `tma` (204 → `undefined`, `detail` ошибки берётся только если это строка: у 422 FastAPI он массив). Остальное: `src/composables/` — состояние и запросы на раздел (`useSettings`, `usePantry`, `useProfile`, `useSummary`) и общий `useSnackbar`; `src/components/` — UI по разделам (`settings/`, `pantry/`, `profile/`) и общие `SegmentedControl`, `AppSnackbar`, `HubIcon`; `src/utils/` — чистая логика (статусы и срок годности, склонения подписей хаба); `src/styles/base.css` — токены (`--tap-size`, `--status-*`) и маппинг `--van-*` на `--tg-*`.
 - Dev: Vite-плагин `webapp/dev/init-data-plugin.ts` отдаёт свежий подписанный `initData` на `/__dev/init-data` (токен и `ADMIN_USER_ID` из `../.env`; только `vite serve`). Прокси `/api` → `127.0.0.1:8080`. Подпись в TS и проверка в Python — независимые реализации алгоритма Telegram, они проверяют друг друга.
 - Тесты: `pytest` (корень, `tests/`, нужен `requirements-dev.txt`), `npm test` / `npm run lint` / `npm run build` в `webapp/`.
 
@@ -93,6 +95,10 @@ user message
 - Для S3-совместимых хранилищ не-AWS (`S3_ENDPOINT_URL` задан) в `backup.py:_backup_s3()` дополнительно отключены дефолтные контрольные суммы запроса/ответа boto3 (`request_checksum_calculation`/`response_checksum_validation` = `when_required`) — иначе `PutObject` падает с `XAmzContentSHA256Mismatch`, это расширение сторонние провайдеры не поддерживают.
 - Mini App, фронтенд: вне Telegram `telegram-web-app.js` всё равно создаёт `Telegram.WebApp` с пустым `initData`, поэтому mock (`webapp/src/telegram/mock.ts`) включается по пустому `initData`, а не по отсутствию объекта.
 - Mini App, доступ: админ становится `approved` лениво, при первом сообщении боту (`ensure_approved`). Пока таблица `users` пуста, `/api/me` отдаёт 403 — сначала напиши тестовому боту.
+- Mini App, UI-библиотека: Vant подключён по компонентам через `unplugin-vue-components` (`webapp/vite.config.ts`); в шаблонах пишутся `<van-skeleton>`, `<van-popup>`, `<van-swipe-cell>` без импортов. В Vitest `vant` приходится пропускать через Vite (`test.server.deps.inline`): иначе Node падает на `.css` из `node_modules`.
+- Mini App, тема: `applyTheme` кладёт `themeParams` в `--tg-*`, а `applyScheme` — схему клиента (light/dark) в `data-scheme` на `<html>`. Тема Telegram не равна `prefers-color-scheme`, поэтому цвета статусов запасов переключаются по `[data-scheme='dark']`.
+- Mini App, формы: обработчик отправки висит на `@click.prevent` кнопки `type="submit"`, а не на `@submit` формы: jsdom не вызывает `submit` у формы, не прикреплённой к документу, а браузеры превращают Enter в поле в клик по этой кнопке.
+- Mini App, тесты фронта: `npm test` нужно запускать из `webapp/`. Запуск `vitest` из корня репозитория не подхватывает конфиг (нет jsdom и Vant) и оставляет пустой `node_modules/.vite`.
 - Mini App, dev-сервер: Vite привязан к `127.0.0.1` (`webapp/vite.config.ts`); API стартует вместе с ботом без флага, поэтому порт `API_PORT` (8080) на машине должен быть свободен, иначе бот падает при старте с `RuntimeError`.
 
 ## Онбординг
@@ -112,7 +118,7 @@ user message
 | `/start` | все | регистрация нового / повтор текущего вопроса анкеты, если онбординг не завершён / сброс контекста диалога (`context_messages`) + приветствие, если завершён | по ситуации |
 | `/cook` | approved | шорткат: шлёт агенту фиксированный промпт «предложи рецепт из pantry», дальше как обычное сообщение (LLM, memory_update) | да |
 | `/random` | approved | шорткат: промпт «случайное блюдо-сюрприз с учётом вкусов/ограничений» | да |
-| `/pantry` | approved | рендер запасов (`pantry_items`) по группам have/low/out | нет |
+| `/pantry` | approved | рендер запасов (`pantry_items`) по группам have/low/to_buy («Нужно купить») | нет |
 | `/profile` | approved | рендер профиля (`profiles`/`profile_tags`: вкусы, ограничения, техника) | нет |
 | `/reset` | approved | инлайн-меню сброса памяти | нет |
 | `/pending` | `ADMIN_USER_ID` | список заявок `pending` с кнопками ✅/❌ | нет |

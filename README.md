@@ -30,7 +30,7 @@ python main.py
 
 ## Mini App (разработка)
 
-Фронтенд Telegram Mini App живёт в `webapp/` (Vue 3 + TypeScript + Vite), API — в `webapp_api/` (FastAPI, поднимается внутри процесса бота вместе с ним). Дизайн — `docs/telegram-mini-app.md` и `docs/telegram-mini-app-dev-env.md`.
+Фронтенд Telegram Mini App живёт в `webapp/` (Vue 3 + TypeScript + Vite), API — в `webapp_api/` (FastAPI, поднимается внутри процесса бота вместе с ним). Дизайн — `docs/telegram-mini-app.md` (что делает), `docs/telegram-mini-app-dev-env.md` (каркас) и `docs/telegram-mini-app-implementation.md` (как построено, срезы, отступления, известные ограничения). Разделы: хаб, Запасы, Профиль, Настройки.
 
 ```bash
 pip install -r requirements.txt -r requirements-dev.txt

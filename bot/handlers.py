@@ -16,6 +16,8 @@ from memory.store import (
     reset_context,
     reset_onboarding,
     reset_all,
+    describe_servings,
+    describe_cooking_time,
 )
 from memory.users import (
     get_user_status,
@@ -210,19 +212,19 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await _run_agent_reply(update, context, RANDOM_PROMPT)
 
 
-_PANTRY_STATUS_LABELS = {"have": "✅ Есть", "low": "⚠️ Мало", "out": "❌ Нет"}
+_PANTRY_STATUS_LABELS = {"have": "✅ Есть", "low": "⚠️ Мало", "to_buy": "🛒 Нужно купить"}
 
 
 def _format_pantry_list(pantry: list[dict]) -> str:
     if not pantry:
         return "Запасы пусты."
 
-    groups: dict[str, list[dict]] = {"have": [], "low": [], "out": []}
+    groups: dict[str, list[dict]] = {"have": [], "low": [], "to_buy": []}
     for item in pantry:
         groups.setdefault(item.get("status", "have"), []).append(item)
 
     lines = []
-    for status in ("have", "low", "out"):
+    for status in ("have", "low", "to_buy"):
         items = groups.get(status, [])
         if not items:
             continue
@@ -237,6 +239,7 @@ def _format_pantry_list(pantry: list[dict]) -> str:
 
 
 async def pantry_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # TODO(mini-app): убрать текстовую команду, когда Mini App обкатается (docs/telegram-mini-app.md)
     if not await _require_onboarded(update, context):
         return
     pantry = await load_pantry(update.effective_user.id)
@@ -253,14 +256,15 @@ def _format_profile(profile: dict) -> str:
         f"⛔ Ограничения: {joined('restrictions')}",
         f"🍳 Техника и посуда: {joined('equipment')}",
     ]
-    if profile.get("servings"):
-        lines.append(f"👥 Обычно готовит на: {profile['servings']}")
-    if profile.get("cooking_time"):
-        lines.append(f"⏱ Время на готовку: {profile['cooking_time']}")
+    if servings := describe_servings(profile.get("servings")):
+        lines.append(f"👥 Обычно готовит на: {servings}")
+    if cooking_time := describe_cooking_time(profile.get("cooking_time")):
+        lines.append(f"⏱ Время на готовку: {cooking_time}")
     return "\n".join(lines)
 
 
 async def profile_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # TODO(mini-app): убрать текстовую команду, когда Mini App обкатается (docs/telegram-mini-app.md)
     if not await _require_onboarded(update, context):
         return
     profile = await load_profile(update.effective_user.id)

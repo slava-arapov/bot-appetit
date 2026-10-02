@@ -9,6 +9,7 @@ from memory.store import (
     load_profile, save_profile,
     load_history, load_context, save_context,
     load_pantry, apply_memory_update,
+    describe_servings, describe_cooking_time,
 )
 
 logger = logging.getLogger(__name__)
@@ -64,7 +65,11 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - Если что-то пошло не так на кухне — помогаешь исправить, не осуждаешь
 - Если из диалога узнал что-то новое о вкусах — включи в memory_update
 - Если из диалога понятно, что пользователь приготовил блюдо и использовал ингредиенты — предложи обновить запасы
-- Если узнал, что пользователь что-то купил, доел или выбросил — обнови pantry в memory_update (включая quantity, если знаешь точное количество, например "2 пачки")
+- Если узнал, что пользователь что-то купил или принёс домой — обнови pantry в memory_update со status "have" (включая quantity, если знаешь точное количество, например "2 пачки"); если продукт был в списке покупок, он перейдёт в запасы
+- Если продукт заканчивается (осталось немного) — status "low"
+- Если продукт закончился, его доели или выбросили — status "out": он уберётся из запасов. В том же ответе коротко спроси, добавить ли его в список покупок. Сам в список не добавляй
+- Если пользователь согласился добавить продукт в список покупок («да», «добавь», «надо купить») или сам просит записать его в покупки — status "to_buy"
+- Продукты со статусом нужно купить (to_buy) — это список покупок, их нет в наличии: при подборе рецепта считай их отсутствующими и называй среди того, что надо докупить
 - Если узнал о новой технике/посуде — включи в memory_update.equipment
 - Формат рецепта:
 * Ингредиенты (список продуктов с количеством)
@@ -90,6 +95,8 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - Не любит: {dislikes}
 - Ограничения: {restrictions}
 - Техника и посуда: {equipment}
+- Обычно готовит на: {servings}
+- Время на готовку: {cooking_time}
 - Запасы (от самого срочного к менее срочному): {pantry}
 - Текущий контекст: {context_notes}
 - Последние блюда: {last_dishes}
@@ -103,7 +110,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
     "restrictions": [],
     "equipment": [],
     "pantry": [
-      {{"name": "название продукта", "status": "have|low|out", "quantity": "2 пачки (опционально)", "expiry_date": "YYYY-MM-DD (опционально)"}}
+      {{"name": "название продукта", "status": "have|low|to_buy|out", "quantity": "2 пачки (опционально)", "expiry_date": "YYYY-MM-DD (опционально)"}}
     ],
     "current_context": "",
     "history": {{
@@ -129,8 +136,11 @@ def _format_pantry(pantry: list[dict]) -> str:
     parts = []
     for item in ordered:
         status = item.get("status", "have")
-        detail = f"годен до {item['expiry_date']}" if item.get("expiry_date") else f"добавлен {item.get('added_date', '?')}"
         quantity = f", {item['quantity']}" if item.get("quantity") else ""
+        if status == "to_buy":
+            parts.append(f"{item['name']} (нужно купить{quantity})")
+            continue
+        detail = f"годен до {item['expiry_date']}" if item.get("expiry_date") else f"добавлен {item.get('added_date', '?')}"
         parts.append(f"{item['name']} ({status}{quantity}, {detail})")
     return ", ".join(parts)
 
@@ -147,6 +157,8 @@ def build_system_prompt(profile: dict, history: list, pantry: list) -> str:
         dislikes=", ".join(profile.get("dislikes", [])) or "не указано",
         restrictions=", ".join(profile.get("restrictions", [])) or "нет",
         equipment=", ".join(profile.get("equipment", [])) or "не указано",
+        servings=describe_servings(profile.get("servings")) or "не указано",
+        cooking_time=describe_cooking_time(profile.get("cooking_time")) or "не указано",
         pantry=_format_pantry(pantry),
         context_notes=profile.get("current_context", {}).get("notes") or "нет",
         last_dishes=dishes_str,
