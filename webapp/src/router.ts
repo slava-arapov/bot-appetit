@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HubView from './views/HubView.vue'
 import PantryView from './views/PantryView.vue'
 import ProfileView from './views/ProfileView.vue'
+import ResetView from './views/ResetView.vue'
 import SettingsView from './views/SettingsView.vue'
 
 export const router = createRouter({
@@ -11,5 +12,6 @@ export const router = createRouter({
     { path: '/pantry', name: 'pantry', component: PantryView },
     { path: '/profile', name: 'profile', component: ProfileView },
     { path: '/settings', name: 'settings', component: SettingsView },
+    { path: '/reset', name: 'reset', component: ResetView },
   ],
 })

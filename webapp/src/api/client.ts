@@ -43,6 +43,11 @@ const jsonInit = (method: string, body: unknown): RequestInit => ({
 export const patchSettings = (patch: Partial<Settings>) =>
   apiFetch<Settings>('/api/settings', jsonInit('PATCH', patch))
 
+export type ResetAction = 'chat' | 'onboarding' | 'all'
+
+export const resetMemory = (action: ResetAction) =>
+  apiFetch<void>(`/api/reset/${action}`, { method: 'POST' })
+
 export type PantryStatus = 'have' | 'low' | 'to_buy'
 
 export interface PantryItem {

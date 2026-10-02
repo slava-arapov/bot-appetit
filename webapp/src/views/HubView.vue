@@ -27,6 +27,7 @@ const cards = computed(
         title: 'Настройки',
         subtitle: summary.value && settingsSubtitle(summary.value.settings),
       },
+      { to: '/reset', icon: 'reset', title: 'Сброс', subtitle: 'Забыть переписку или начать заново' },
     ] as const,
 )
 </script>

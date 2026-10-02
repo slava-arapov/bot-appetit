@@ -10,7 +10,6 @@ from bot.handlers import (
     start,
     handle_message,
     handle_approval_callback,
-    handle_reset_callback,
     handle_onboarding_callback,
     error_handler,
     pending_command,
@@ -18,7 +17,6 @@ from bot.handlers import (
     stats_command,
     cook_command,
     random_command,
-    reset_command,
 )
 from bot.jobs import notify_expiring
 from memory.db import init_db, close_db
@@ -34,7 +32,6 @@ DEFAULT_COMMANDS = [
     BotCommand("start", "Начать / забыть последние сообщения"),
     BotCommand("cook", "Что приготовить из того, что есть"),
     BotCommand("random", "Случайное блюдо-сюрприз"),
-    BotCommand("reset", "Сбросить память бота"),
 ]
 
 ADMIN_COMMANDS = DEFAULT_COMMANDS + [
@@ -104,13 +101,11 @@ def main():
     app.add_handler(CommandHandler("start", _tracked("start", start)))
     app.add_handler(CommandHandler("cook", _tracked("cook", cook_command)))
     app.add_handler(CommandHandler("random", _tracked("random", random_command)))
-    app.add_handler(CommandHandler("reset", _tracked("reset", reset_command)))
     app.add_handler(CommandHandler("pending", _tracked("pending", pending_command)))
     app.add_handler(CommandHandler("broadcast", _tracked("broadcast", broadcast_command)))
     app.add_handler(CommandHandler("stats", _tracked("stats", stats_command)))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_approval_callback, pattern=r"^(approve|reject):"))
-    app.add_handler(CallbackQueryHandler(handle_reset_callback, pattern=r"^reset"))
     app.add_handler(CallbackQueryHandler(handle_onboarding_callback, pattern=r"^onb:"))
     app.add_error_handler(error_handler)
     app.job_queue.run_daily(notify_expiring, time=datetime.time(9, 0))

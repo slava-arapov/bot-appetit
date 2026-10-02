@@ -1,5 +1,5 @@
 <script setup lang="ts">
-defineProps<{ name: 'pantry' | 'profile' | 'settings' }>()
+defineProps<{ name: 'pantry' | 'profile' | 'settings' | 'reset' }>()
 </script>
 
 <template>
@@ -20,6 +20,10 @@ defineProps<{ name: 'pantry' | 'profile' | 'settings' }>()
     <template v-else-if="name === 'profile'">
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
+    </template>
+    <template v-else-if="name === 'reset'">
+      <path d="M4 12a8 8 0 1 0 3-6.2" />
+      <path d="M4 4v5h5" />
     </template>
     <template v-else>
       <path d="M4 7h10M18 7h2M4 17h2M10 17h10" />

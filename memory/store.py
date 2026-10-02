@@ -141,7 +141,7 @@ def normalize_cooking_time(raw: str | None) -> str | None:
 
 
 def describe_servings(raw: str | None) -> str | None:
-    """Человекочитаемая строка для промпта и /profile; нераспознанный текст возвращается как есть."""
+    """Человекочитаемая строка для промпта агента; нераспознанный текст возвращается как есть."""
     count = normalize_servings(raw)
     if count is None:
         return raw or None

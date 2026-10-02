@@ -28,13 +28,14 @@ const cards = (w: ReturnType<typeof mountHub>) =>
   }))
 
 describe('HubView', () => {
-  it('показывает три карточки-ссылки', async () => {
+  it('показывает четыре карточки-ссылки', async () => {
     const w = mountHub()
     await flushPromises()
     expect(cards(w).map((c) => [c.to, c.title])).toEqual([
       ['/pantry', 'Запасы'],
       ['/profile', 'Профиль'],
       ['/settings', 'Настройки'],
+      ['/reset', 'Сброс'],
     ])
   })
 
@@ -45,13 +46,14 @@ describe('HubView', () => {
       '2 товара заканчиваются, 3 купить',
       '5 вкусов, 2 ограничения',
       '4 порции · до 30 минут',
+      'Забыть переписку или начать заново',
     ])
   })
 
   it('пока сводка грузится, карточки уже работают, а вместо подписей — заглушки', () => {
     api.getSummary.mockReturnValue(new Promise(() => undefined))
     const w = mountHub()
-    expect(cards(w)).toHaveLength(3)
+    expect(cards(w)).toHaveLength(4)
     expect(w.findAll('[data-test="subtitle-placeholder"]')).toHaveLength(3)
   })
 
@@ -60,7 +62,7 @@ describe('HubView', () => {
     const w = mountHub()
     await flushPromises()
 
-    expect(cards(w).map((c) => c.subtitle)).toEqual([null, null, null])
+    expect(cards(w).map((c) => c.subtitle)).toEqual([null, null, null, 'Забыть переписку или начать заново'])
     expect(w.find('[role="alert"]').exists()).toBe(false)
     expect(w.findAll('[data-test="subtitle-placeholder"]')).toHaveLength(0)
   })

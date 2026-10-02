@@ -22,8 +22,6 @@ from config import ADMIN_USER_ID, EQUIPMENT_OPTIONS
 from memory.store import (
     load_profile,
     reset_context,
-    reset_onboarding,
-    reset_all,
     describe_servings,
     describe_cooking_time,
     normalize_tag,
@@ -422,86 +420,6 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await _require_onboarded(update, context):
         return
     await _run_agent_reply(update, context, RANDOM_PROMPT)
-
-
-async def _do_reset_chat(user_id: int) -> str:
-    await reset_context(user_id)
-    return "Переписка забыта, начинаем с чистого листа 🧹"
-
-
-_RESET_ACTIONS = {
-    "chat": _do_reset_chat,
-}
-
-_DANGEROUS_RESET_ACTIONS = {
-    "onboarding": (
-        "Точно заполнить анкету заново? Текущие вкусы, ограничения и техника "
-        "будут перезаписаны по ходу вопросов."
-    ),
-    "all": "Точно забыть всё — анкету, историю, запасы и переписку? Это нельзя отменить.",
-}
-
-# После этих действий анкета обнулена — сразу же перезапускаем онбординг.
-_RESTART_ONBOARDING_ACTIONS = {
-    "onboarding": (reset_onboarding, "Хорошо, заполняем анкету заново 📋"),
-    "all": (reset_all, "Забыл всё, что знал о тебе. Начинаем с начала 🔄"),
-}
-
-RESET_KEYBOARD = InlineKeyboardMarkup([
-    [InlineKeyboardButton("🗑 Забыть последние сообщения", callback_data="reset:chat")],
-    [InlineKeyboardButton("📋 Заполнить анкету заново", callback_data="reset:onboarding")],
-    [InlineKeyboardButton("⚠️ Забыть всё и начать с начала", callback_data="reset:all")],
-])
-
-
-def _confirm_keyboard(action: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton("Да", callback_data=f"reset_confirm:{action}"),
-        InlineKeyboardButton("Нет", callback_data="reset_cancel"),
-    ]])
-
-
-async def reset_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await _require_approved(update, context):
-        return
-    await update.message.reply_text("Что сбросить?", reply_markup=RESET_KEYBOARD)
-
-
-async def handle_reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    data = query.data
-
-    if data == "reset_cancel":
-        await query.edit_message_text("Отменено.")
-        await query.answer()
-        return
-
-    action = data.split(":", 1)[1]
-
-    if data.startswith("reset_confirm:"):
-        user_id = query.from_user.id
-        restart = _RESTART_ONBOARDING_ACTIONS.get(action)
-        if restart:
-            reset_fn, text = restart
-            await reset_fn(user_id)
-            await query.edit_message_text(text)
-            _reset_onboarding_state(context)
-            await _send_view(context, query.message.chat_id, await run_onboarding(user_id, ""))
-        else:
-            handler = _RESET_ACTIONS.get(action)
-            if handler:
-                await query.edit_message_text(await handler(user_id))
-        await query.answer()
-        return
-
-    warning = _DANGEROUS_RESET_ACTIONS.get(action)
-    if warning:
-        await query.edit_message_text(warning, reply_markup=_confirm_keyboard(action))
-    else:
-        handler = _RESET_ACTIONS.get(action)
-        if handler:
-            await query.edit_message_text(await handler(query.from_user.id))
-    await query.answer()
 
 
 async def handle_approval_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

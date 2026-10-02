@@ -4,6 +4,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, Field, StringConstraints
 
+from agent.chef import run_onboarding
 from config import EQUIPMENT_OPTIONS, EXPIRY_WARNING_DAYS
 from memory.store import (
     PantryNameTaken,
@@ -15,6 +16,9 @@ from memory.store import (
     list_pantry,
     list_tags,
     remove_tag,
+    reset_all,
+    reset_context,
+    reset_onboarding,
     set_settings,
     update_pantry_item,
 )
@@ -137,4 +141,17 @@ async def create_tag(body: TagCreate, user: dict = Depends(current_user)):
 async def delete_tag(tag_id: int, user: dict = Depends(current_user)):
     if not await remove_tag(int(user["id"]), tag_id):
         raise HTTPException(status_code=404, detail="Тег не найден")
+    return Response(status_code=204)
+
+
+@router.post("/reset/{action}", status_code=204)
+async def reset_memory(action: Literal["chat", "onboarding", "all"], user: dict = Depends(current_user)):
+    """Сброс памяти: переписка, анкета или всё сразу; подтверждение опасных действий — на стороне клиента."""
+    user_id = int(user["id"])
+    if action == "chat":
+        await reset_context(user_id)
+    else:
+        await (reset_onboarding if action == "onboarding" else reset_all)(user_id)
+        # как в боте: анкета сразу переходит на первый вопрос, /start покажет его в чате
+        await run_onboarding(user_id, "")
     return Response(status_code=204)

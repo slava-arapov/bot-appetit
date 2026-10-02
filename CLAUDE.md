@@ -133,20 +133,10 @@ Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` �
 | `/start` | все | регистрация нового / повтор текущего вопроса анкеты, если онбординг не завершён / сброс контекста диалога (`context_messages`) + приветствие, если завершён | по ситуации |
 | `/cook` | approved | шорткат: шлёт агенту фиксированный промпт «предложи рецепт из pantry», дальше как обычное сообщение (LLM, memory_update) | да |
 | `/random` | approved | шорткат: промпт «случайное блюдо-сюрприз с учётом вкусов/ограничений» | да |
-| `/reset` | approved | инлайн-меню сброса памяти | нет |
 | `/pending` | `ADMIN_USER_ID` | список заявок `pending` с кнопками ✅/❌ | нет |
 | `/broadcast <текст>` | `ADMIN_USER_ID` | рассылка всем `approved`-пользователям | нет |
 
-`/cook` и `/random` — не отдельная ветка логики, а просто заготовленный `user_text`, дальше идёт тот же путь, что и у любого сообщения (`_run_agent_reply()` в `bot/handlers.py`). Запасы и профиль в боте командами не показываются — только через Mini App.
-
-### `/reset` и подтверждение опасных действий
-
-`/reset` показывает 3 кнопки (`callback_data="reset:chat|onboarding|all"`):
-- `reset:chat` — забыть переписку (таблица `context_messages`), выполняется сразу, не опасно
-- `reset:onboarding` — заполнить анкету заново, **сначала спрашивает подтверждение** (Да/Нет)
-- `reset:all` — стереть анкету/историю/контекст/запасы, **сначала спрашивает подтверждение**
-
-Подтверждение — отдельный шаг в `handle_reset_callback`: кнопки Да/Нет шлют `reset_confirm:<action>` / `reset_cancel`. `reset:chat` в этот шаг не попадает — для него в `_DANGEROUS_RESET_ACTIONS` нет записи. Сама логика сброса — в `memory/store.py`: `reset_context`, `reset_onboarding`, `reset_all`. Стоящие отдельными командами `/reset_chat`, `/reset_onboarding`, `/reset_all` намеренно не сделаны — единственная точка входа для сброса это `/reset`, чтобы не тыкать по ошибке в деструктивную команду через автокомплит Telegram.
+`/cook` и `/random` — не отдельная ветка логики, а просто заготовленный `user_text`, дальше идёт тот же путь, что и у любого сообщения (`_run_agent_reply()` в `bot/handlers.py`). Запасы, профиль и сброс памяти в боте командами не доступны — только через Mini App (раздел «Сброс», `POST /api/reset/{chat|onboarding|all}`; логика — `memory/store.py`: `reset_context`, `reset_onboarding`, `reset_all`).
 
 ### Меню команд в Telegram (`/`-подсказки)
 
@@ -154,9 +144,8 @@ Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` �
 
 ### Роутинг `CallbackQueryHandler`
 
-В `main.py` три колбэк-хендлера различаются по `pattern` — без этого первый зарегистрированный ловил бы вообще все inline-нажатия:
+В `main.py` два колбэк-хендлера различаются по `pattern` — без этого первый зарегистрированный ловил бы вообще все inline-нажатия:
 - `handle_approval_callback` — `pattern=r"^(approve|reject):"` (одобрение заявок)
-- `handle_reset_callback` — `pattern=r"^reset"` (покрывает `reset:`, `reset_confirm:` и `reset_cancel`)
 - `handle_onboarding_callback` — `pattern=r"^onb:"` (кнопки анкеты; сама проверяет, что пользователь `approved`)
 
 ## Переменные окружения

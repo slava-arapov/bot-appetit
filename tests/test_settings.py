@@ -191,3 +191,54 @@ def test_equipment_options_are_unique_lowercase():
     assert len(EQUIPMENT_OPTIONS) == len(set(EQUIPMENT_OPTIONS))
     assert all(option == option.strip().lower() for option in EQUIPMENT_OPTIONS)
     assert {"духовка", "плита", "блендер"} <= set(EQUIPMENT_OPTIONS)
+
+
+async def test_api_reset_chat_clears_context_only(client):
+    from memory.store import load_context, save_context
+
+    await approve_user(42)
+    await save_context(42, [{"role": "user", "content": "привет"}])
+    await save_profile(42, {**await load_profile(42), "likes": ["сыр"], "onboarding_done": True})
+
+    r = await client.post("/api/reset/chat", headers=headers())
+
+    assert r.status_code == 204
+    assert await load_context(42) == []
+    profile = await load_profile(42)
+    assert profile["likes"] == ["сыр"] and profile["onboarding_done"] is True
+
+
+async def test_api_reset_onboarding_restarts_survey_keeping_tags(client):
+    await approve_user(42)
+    await save_profile(42, {**await load_profile(42), "likes": ["сыр"], "onboarding_done": True})
+
+    r = await client.post("/api/reset/onboarding", headers=headers())
+
+    assert r.status_code == 204
+    profile = await load_profile(42)
+    assert profile["onboarding_done"] is False and profile["onboarding_step"] == 1
+    assert profile["likes"] == ["сыр"]
+
+
+async def test_api_reset_all_wipes_memory(client):
+    from memory.store import list_pantry, add_pantry_item
+
+    await approve_user(42)
+    await approve_user(43)
+    await add_pantry_item(42, "молоко")
+    await add_pantry_item(43, "хлеб")
+    await save_profile(42, {**await load_profile(42), "likes": ["сыр"], "onboarding_done": True})
+
+    r = await client.post("/api/reset/all", headers=headers())
+
+    assert r.status_code == 204
+    profile = await load_profile(42)
+    assert profile["likes"] == [] and profile["onboarding_step"] == 1
+    assert await list_pantry(42) == []
+    assert len(await list_pantry(43)) == 1
+
+
+async def test_api_reset_rejects_unknown_action_and_missing_auth(client):
+    await approve_user(42)
+    assert (await client.post("/api/reset/nope", headers=headers())).status_code == 422
+    assert (await client.post("/api/reset/chat")).status_code == 401
