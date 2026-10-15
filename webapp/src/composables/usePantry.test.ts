@@ -75,11 +75,11 @@ describe('usePantry: загрузка и секции', () => {
     expect(expiryWarningDays.value).toBe(3)
   })
 
-  it('группирует в порядке «Мало» → «Нужно купить» → «Есть»', async () => {
+  it('группирует в порядке «Нужно купить» → «Мало» → «Есть»', async () => {
     const { sections } = await ready()
     expect(sections.value.map((s) => [s.status, s.items.map((i) => i.name)])).toEqual([
-      ['low', ['Сыр']],
       ['to_buy', ['Хлеб']],
+      ['low', ['Сыр']],
       ['have', ['Молоко', 'Яйца']],
     ])
   })

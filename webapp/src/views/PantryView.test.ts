@@ -52,6 +52,10 @@ afterEach(() => {
   delete window.Telegram
 })
 
+/** Строка по названию: порядок секций менялся, индексы хрупкие. */
+const rowOf = (w: ReturnType<typeof mount>, name: string) =>
+  w.findAll('.row').find((r) => r.text().includes(name))!
+
 async function mountView() {
   const w = mount(PantryView)
   await flushPromises()
@@ -65,12 +69,12 @@ describe('PantryView', () => {
     expect(w.find('.van-skeleton').exists()).toBe(true)
   })
 
-  it('показывает секции в порядке «Мало», «Нужно купить», «Есть»', async () => {
+  it('показывает секции в порядке «Нужно купить», «Мало», «Есть»', async () => {
     const w = await mountView()
     const headings = w.findAll('h2').map((h) => h.text())
     expect(headings).toEqual([
-      expect.stringContaining('Мало'),
       expect.stringContaining('Нужно купить'),
+      expect.stringContaining('Мало'),
       expect.stringContaining('Есть'),
     ])
     expect(w.text()).toContain('Сыр')
@@ -78,8 +82,7 @@ describe('PantryView', () => {
 
   it('тап по чипу открывает лист, выбор статуса сохраняется', async () => {
     const w = await mountView()
-    const cheeseChip = w.findAll('[data-test="status-chip"]')[0] // «Сыр», low
-    await cheeseChip.trigger('click')
+    await rowOf(w, 'Сыр').get('[data-test="status-chip"]').trigger('click') // low
     await flushPromises()
 
     expect(api.patchPantryItem).not.toHaveBeenCalled()
@@ -95,11 +98,11 @@ describe('PantryView', () => {
 
   it('в листе текущий статус отмечен галочкой', async () => {
     const w = await mountView()
-    await w.findAll('[data-test="status-chip"]')[0].trigger('click') // «Сыр», low
+    await rowOf(w, 'Сыр').get('[data-test="status-chip"]').trigger('click') // low
     await flushPromises()
 
     const labels = w.findAll('.van-action-sheet__item').map((o) => o.text())
-    expect(labels).toEqual(['Есть', '✓ Мало', 'Нужно купить'])
+    expect(labels).toEqual(['Нужно купить', '✓ Мало', 'Есть'])
   })
 
   it('пустой список показывает приглашение добавить первый продукт', async () => {
@@ -133,7 +136,7 @@ describe('PantryView', () => {
   it('правка отправляет только изменённые поля', async () => {
     const w = await mountView()
 
-    await w.findAll('[data-test="open"]')[0].trigger('click') // «Сыр»
+    await rowOf(w, 'Сыр').get('[data-test="open"]').trigger('click')
     await flushPromises()
     await w.get('[data-test="quantity"]').setValue('100 г')
     await w.get('[data-test="submit"]').trigger('click')
@@ -145,7 +148,7 @@ describe('PantryView', () => {
   it('удаление из формы правки убирает позицию и предлагает отменить', async () => {
     const w = await mountView()
 
-    await w.findAll('[data-test="open"]')[0].trigger('click')
+    await rowOf(w, 'Сыр').get('[data-test="open"]').trigger('click')
     await flushPromises()
     await w.get('[data-test="delete"]').trigger('click')
     await flushPromises()

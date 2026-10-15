@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { PantryDraft, PantryItem, PantryStatus } from '../../api/client'
 import { useBackClose } from '../../telegram/backButton'
-import { STATUS_LABELS, STATUS_ORDER } from '../../utils/pantry'
+import { SECTION_ORDER, STATUS_LABELS } from '../../utils/pantry'
 import SegmentedControl from '../SegmentedControl.vue'
 
 const props = defineProps<{ show: boolean; item: PantryItem | null }>()
@@ -12,7 +12,7 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-const STATUS_OPTIONS = STATUS_ORDER.map((value) => ({
+const STATUS_OPTIONS = SECTION_ORDER.map((value) => ({
   value,
   label: STATUS_LABELS[value],
 }))

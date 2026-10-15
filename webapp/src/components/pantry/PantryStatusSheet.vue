@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { PantryItem, PantryStatus } from '../../api/client'
 import { useBackClose } from '../../telegram/backButton'
-import { STATUS_LABELS, STATUS_ORDER } from '../../utils/pantry'
+import { SECTION_ORDER, STATUS_LABELS } from '../../utils/pantry'
 
 const props = defineProps<{ show: boolean; item: PantryItem | null }>()
 const emit = defineEmits<{ 'update:show': [value: boolean]; select: [status: PantryStatus] }>()
@@ -14,7 +14,7 @@ useBackClose(
 
 // Текущий статус отмечен галочкой в тексте: выбор не должен держаться только на цвете.
 const actions = computed(() =>
-  STATUS_ORDER.map((status) => ({
+  SECTION_ORDER.map((status) => ({
     name: props.item?.status === status ? `✓ ${STATUS_LABELS[status]}` : STATUS_LABELS[status],
     status,
     className: `status-action status-action--${status}`,

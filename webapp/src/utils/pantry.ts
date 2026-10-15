@@ -1,16 +1,13 @@
 import type { PantryStatus } from '../api/client'
 
-// Порядок секций на экране: то, что требует внимания, — наверху.
-export const SECTION_ORDER: PantryStatus[] = ['low', 'to_buy', 'have']
+// Единый порядок статусов: секции на экране, лист выбора, форма правки. Что требует внимания — первым.
+export const SECTION_ORDER: PantryStatus[] = ['to_buy', 'low', 'have']
 
 export const STATUS_LABELS: Record<PantryStatus, string> = {
   low: 'Мало',
   to_buy: 'Нужно купить',
   have: 'Есть',
 }
-
-/** Порядок выбора статуса в форме и листе: есть → мало → нужно купить. */
-export const STATUS_ORDER: PantryStatus[] = ['have', 'low', 'to_buy']
 
 /** Локальная дата в формате YYYY-MM-DD (toISOString дал бы UTC и сдвиг на сутки около полуночи). */
 export function toISODate(date: Date): string {

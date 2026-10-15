@@ -45,9 +45,9 @@ describe('PantryItemSheet: добавление', () => {
     const w = mountSheet()
     await w.get('[data-test="name"]').setValue('Хлеб')
     const options = w.findAll('[role="radio"]')
-    expect(options.map((o) => o.text())).toEqual(['Есть', 'Мало', 'Нужно купить'])
+    expect(options.map((o) => o.text())).toEqual(['Нужно купить', 'Мало', 'Есть'])
 
-    await options[2].trigger('click')
+    await options[0].trigger('click')
     await submit(w).trigger('click')
 
     expect(w.emitted('save')?.[0][0]).toMatchObject({ name: 'Хлеб', status: 'to_buy' })
