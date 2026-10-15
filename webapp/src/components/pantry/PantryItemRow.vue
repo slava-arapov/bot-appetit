@@ -4,7 +4,7 @@ import type { PantryItem } from '../../api/client'
 import { formatExpiry, STATUS_LABELS } from '../../utils/pantry'
 
 const props = defineProps<{ item: PantryItem; expiring: boolean }>()
-defineEmits<{ cycle: []; edit: []; remove: [] }>()
+defineEmits<{ status: []; edit: []; remove: [] }>()
 
 const expiryText = computed(() => {
   const date = props.item.expiry_date
@@ -31,8 +31,9 @@ const label = computed(() => STATUS_LABELS[props.item.status])
         class="row__chip"
         data-test="status-chip"
         :data-status="item.status"
-        :aria-label="`${item.name}: ${label}. Нажмите, чтобы сменить статус`"
-        @click="$emit('cycle')"
+        aria-haspopup="dialog"
+        :aria-label="`${item.name}: ${label}. Нажмите, чтобы выбрать статус`"
+        @click="$emit('status')"
       >
         {{ label }}
       </button>

@@ -9,11 +9,8 @@ export const STATUS_LABELS: Record<PantryStatus, string> = {
   have: 'Есть',
 }
 
-const STATUS_CYCLE: PantryStatus[] = ['have', 'low', 'to_buy']
-
-export function nextStatus(status: PantryStatus): PantryStatus {
-  return STATUS_CYCLE[(STATUS_CYCLE.indexOf(status) + 1) % STATUS_CYCLE.length]
-}
+/** Порядок выбора статуса в форме и листе: есть → мало → нужно купить. */
+export const STATUS_ORDER: PantryStatus[] = ['have', 'low', 'to_buy']
 
 /** Локальная дата в формате YYYY-MM-DD (toISOString дал бы UTC и сдвиг на сутки около полуночи). */
 export function toISODate(date: Date): string {

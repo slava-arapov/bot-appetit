@@ -100,21 +100,45 @@ describe('usePantry: загрузка и секции', () => {
 })
 
 describe('usePantry: смена статуса', () => {
-  it('cycleStatus переключает по кругу и сразу сохраняет', async () => {
+  it('setStatus ставит выбранный статус сразу, без промежуточных', async () => {
     const store = await ready()
 
-    store.cycleStatus(store.items.value[1]) // low → to_buy
-    expect(status(store, 2)).toBe('to_buy')
+    void store.setStatus(store.items.value[0], 'to_buy') // have → to_buy
+    expect(status(store, 1)).toBe('to_buy')
     await flushPromises()
 
-    expect(api.patchPantryItem).toHaveBeenCalledWith(2, { status: 'to_buy' })
+    expect(api.patchPantryItem).toHaveBeenCalledTimes(1)
+    expect(api.patchPantryItem).toHaveBeenCalledWith(1, { status: 'to_buy' })
+  })
+
+  it('setStatus с тем же статусом ничего не делает', async () => {
+    const store = await ready()
+
+    await store.setStatus(store.items.value[1], 'low')
+
+    expect(api.patchPantryItem).not.toHaveBeenCalled()
+    expect(useSnackbar().current.value).toBeNull()
+  })
+
+  it('после смены показывает «Отменить», который возвращает прежний статус', async () => {
+    const store = await ready()
+
+    await store.setStatus(store.items.value[1], 'to_buy') // low → to_buy
+    expect(useSnackbar().current.value).toMatchObject({
+      message: 'Сыр → Нужно купить',
+      kind: 'undo',
+    })
+
+    useSnackbar().act()
+    await flushPromises()
+    expect(status(store, 2)).toBe('low')
   })
 
   it('при ошибке откатывает статус и предлагает повторить', async () => {
     const store = await ready()
     api.patchPantryItem.mockRejectedValueOnce(new Error('сервер недоступен'))
 
-    store.cycleStatus(store.items.value[0]) // have → low
+    void store.setStatus(store.items.value[0], 'low') // have → low
     await flushPromises()
 
     expect(status(store, 1)).toBe('have')

@@ -2,7 +2,7 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import type { PantryDraft, PantryItem, PantryStatus } from '../../api/client'
 import { useBackClose } from '../../telegram/backButton'
-import { STATUS_LABELS } from '../../utils/pantry'
+import { STATUS_LABELS, STATUS_ORDER } from '../../utils/pantry'
 import SegmentedControl from '../SegmentedControl.vue'
 
 const props = defineProps<{ show: boolean; item: PantryItem | null }>()
@@ -12,8 +12,7 @@ const emit = defineEmits<{
   remove: []
 }>()
 
-// В форме статусы идут в «естественном» порядке, как в цикле чипа: есть → мало → нужно купить.
-const STATUS_OPTIONS = (['have', 'low', 'to_buy'] as const).map((value) => ({
+const STATUS_OPTIONS = STATUS_ORDER.map((value) => ({
   value,
   label: STATUS_LABELS[value],
 }))

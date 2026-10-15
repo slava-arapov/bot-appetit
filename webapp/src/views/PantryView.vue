@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { ref } from 'vue'
-import type { PantryChanges, PantryDraft, PantryItem } from '../api/client'
+import type { PantryChanges, PantryDraft, PantryItem, PantryStatus } from '../api/client'
 import PantryItemSheet from '../components/pantry/PantryItemSheet.vue'
 import PantrySection from '../components/pantry/PantrySection.vue'
+import PantryStatusSheet from '../components/pantry/PantryStatusSheet.vue'
 import { usePantry } from '../composables/usePantry'
 
 const pantry = usePantry()
@@ -19,6 +20,18 @@ function openAdd() {
 function openEdit(item: PantryItem) {
   editing.value = item
   sheetOpen.value = true
+}
+
+const statusOpen = ref(false)
+const statusItem = ref<PantryItem | null>(null)
+
+function openStatus(item: PantryItem) {
+  statusItem.value = item
+  statusOpen.value = true
+}
+
+function pickStatus(status: PantryStatus) {
+  if (statusItem.value) void pantry.setStatus(statusItem.value, status)
 }
 
 /** Из формы правки уходит только то, что реально изменилось. */
@@ -82,11 +95,13 @@ function removeEditing() {
         :status="section.status"
         :items="section.items"
         :expiry-warning-days="expiryWarningDays"
-        @cycle="pantry.cycleStatus"
+        @status="openStatus"
         @edit="openEdit"
         @remove="pantry.remove"
       />
     </template>
+
+    <PantryStatusSheet v-model:show="statusOpen" :item="statusItem" @select="pickStatus" />
 
     <PantryItemSheet
       v-model:show="sheetOpen"

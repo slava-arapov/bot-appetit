@@ -1,13 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { formatExpiry, isExpiring, nextStatus, toISODate } from './pantry'
-
-describe('nextStatus', () => {
-  it('идёт по кругу have → low → to_buy → have', () => {
-    expect(nextStatus('have')).toBe('low')
-    expect(nextStatus('low')).toBe('to_buy')
-    expect(nextStatus('to_buy')).toBe('have')
-  })
-})
+import { formatExpiry, isExpiring, toISODate } from './pantry'
 
 describe('toISODate', () => {
   it('берёт локальную дату, а не UTC', () => {

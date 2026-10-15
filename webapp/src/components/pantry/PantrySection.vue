@@ -8,7 +8,7 @@ defineProps<{
   items: PantryItem[]
   expiryWarningDays: number
 }>()
-defineEmits<{ cycle: [item: PantryItem]; edit: [item: PantryItem]; remove: [item: PantryItem] }>()
+defineEmits<{ status: [item: PantryItem]; edit: [item: PantryItem]; remove: [item: PantryItem] }>()
 </script>
 
 <template>
@@ -22,7 +22,7 @@ defineEmits<{ cycle: [item: PantryItem]; edit: [item: PantryItem]; remove: [item
       :key="item.id"
       :item="item"
       :expiring="item.status !== 'to_buy' && isExpiring(item.expiry_date, expiryWarningDays)"
-      @cycle="$emit('cycle', item)"
+      @status="$emit('status', item)"
       @edit="$emit('edit', item)"
       @remove="$emit('remove', item)"
     />

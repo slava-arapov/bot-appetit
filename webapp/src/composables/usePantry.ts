@@ -8,9 +8,10 @@ import {
   type PantryChanges,
   type PantryDraft,
   type PantryItem,
+  type PantryStatus,
 } from '../api/client'
 import { haptic } from '../telegram/haptic'
-import { nextStatus, SECTION_ORDER } from '../utils/pantry'
+import { SECTION_ORDER, STATUS_LABELS } from '../utils/pantry'
 import { useSnackbar } from './useSnackbar'
 
 const DEFAULT_EXPIRY_WARNING_DAYS = 3
@@ -72,8 +73,16 @@ export function usePantry() {
     }
   }
 
-  function cycleStatus(item: PantryItem) {
-    void update(item.id, { status: nextStatus(item.status) })
+  /** Строка уезжает в другую секцию, поэтому сообщаем куда и даём вернуть назад. */
+  async function setStatus(item: PantryItem, status: PantryStatus) {
+    if (item.status === status) return
+    const previous = item.status
+    if (await update(item.id, { status })) {
+      snackbar.showUndo(
+        `${item.name} → ${STATUS_LABELS[status]}`,
+        () => void update(item.id, { status: previous }),
+      )
+    }
   }
 
   async function add(draft: PantryDraft): Promise<boolean> {
@@ -120,7 +129,7 @@ export function usePantry() {
     expiryWarningDays,
     loading,
     loadError,
-    cycleStatus,
+    setStatus,
     add,
     update,
     remove,

@@ -34,14 +34,14 @@ describe('PantryItemRow', () => {
     expect(w.find('.row__meta').exists()).toBe(false)
   })
 
-  it('чип показывает статус и по тапу просит сменить его', async () => {
+  it('чип показывает статус и по тапу просит выбрать новый', async () => {
     const w = mountRow()
     const chip = w.get('[data-test="status-chip"]')
     expect(chip.text()).toBe('Мало')
     expect(chip.attributes('aria-label')).toContain('Мало')
 
     await chip.trigger('click')
-    expect(w.emitted('cycle')).toHaveLength(1)
+    expect(w.emitted('status')).toHaveLength(1)
   })
 
   it('тап по названию открывает правку', async () => {

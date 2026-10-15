@@ -76,13 +76,30 @@ describe('PantryView', () => {
     expect(w.text()).toContain('Сыр')
   })
 
-  it('тап по чипу меняет статус и сохраняет его', async () => {
+  it('тап по чипу открывает лист, выбор статуса сохраняется', async () => {
     const w = await mountView()
     const cheeseChip = w.findAll('[data-test="status-chip"]')[0] // «Сыр», low
     await cheeseChip.trigger('click')
     await flushPromises()
 
+    expect(api.patchPantryItem).not.toHaveBeenCalled()
+    const option = w
+      .findAll('.van-action-sheet__item')
+      .find((o) => o.text() === 'Нужно купить')
+    expect(option).toBeDefined()
+    await option!.trigger('click')
+    await flushPromises()
+
     expect(api.patchPantryItem).toHaveBeenCalledWith(2, { status: 'to_buy' })
+  })
+
+  it('в листе текущий статус отмечен галочкой', async () => {
+    const w = await mountView()
+    await w.findAll('[data-test="status-chip"]')[0].trigger('click') // «Сыр», low
+    await flushPromises()
+
+    const labels = w.findAll('.van-action-sheet__item').map((o) => o.text())
+    expect(labels).toEqual(['Есть', '✓ Мало', 'Нужно купить'])
   })
 
   it('пустой список показывает приглашение добавить первый продукт', async () => {
