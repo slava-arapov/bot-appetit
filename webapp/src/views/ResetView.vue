@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import { resetMemory, type ResetAction } from '../api/client'
+import { useBackClose } from '../telegram/backButton'
 import { haptic } from '../telegram/haptic'
 import { useSnackbar } from '../composables/useSnackbar'
 
@@ -50,6 +51,8 @@ const confirmOpen = computed({
     if (!open && !busy.value) pending.value = null
   },
 })
+
+useBackClose(confirmOpen, () => (confirmOpen.value = false))
 
 async function run(option: ResetOption) {
   busy.value = true

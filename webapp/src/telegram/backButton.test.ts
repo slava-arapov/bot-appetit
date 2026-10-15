@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
+import { ref } from 'vue'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { bindBackButton } from './backButton'
+import { bindBackButton, useBackClose } from './backButton'
 import { createMockWebApp } from './mock'
 
 const Stub = { template: '<div />' }
@@ -43,6 +44,24 @@ describe('bindBackButton', () => {
     await router.isReady()
     await new Promise((r) => setTimeout(r))
 
+    expect(router.currentRoute.value.name).toBe('hub')
+  })
+
+  it('пока оверлей открыт, нажатие закрывает его, а не уходит на хаб', async () => {
+    const { router } = setup()
+    await router.push('/settings')
+    const open = ref(true)
+    useBackClose(open, () => (open.value = false))
+    const press = () =>
+      (window as unknown as { __tgMock: { pressBack(): void } }).__tgMock.pressBack()
+
+    press()
+    await new Promise((r) => setTimeout(r))
+    expect(open.value).toBe(false)
+    expect(router.currentRoute.value.name).toBe('settings')
+
+    press()
+    await new Promise((r) => setTimeout(r))
     expect(router.currentRoute.value.name).toBe('hub')
   })
 })

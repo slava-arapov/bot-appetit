@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, nextTick, ref, watch } from 'vue'
 import type { PantryDraft, PantryItem, PantryStatus } from '../../api/client'
+import { useBackClose } from '../../telegram/backButton'
 import { STATUS_LABELS } from '../../utils/pantry'
 import SegmentedControl from '../SegmentedControl.vue'
 
@@ -16,6 +17,11 @@ const STATUS_OPTIONS = (['have', 'low', 'to_buy'] as const).map((value) => ({
   value,
   label: STATUS_LABELS[value],
 }))
+
+useBackClose(
+  () => props.show,
+  () => emit('update:show', false),
+)
 
 const name = ref('')
 const quantity = ref('')
