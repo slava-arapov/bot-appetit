@@ -211,6 +211,20 @@ curl -s  https://botappetit.goida.root.sx/api/summary    # 401: запрос д�
 
 `502` на `/api/` — бот не запущен или `API_PORT` в `.env` не совпадает с `proxy_pass` в конфиге.
 
+### Кеширование статики
+
+CI не обновляет конфиг nginx: после правки `deploy/nginx-botappetit.conf` повтори шаг 4 (`cp` и `nginx -t && reload`; `ln -s` уже не нужен).
+
+`index.html` отдаётся с `Cache-Control: no-cache`, файлы из `/assets/` — с `immutable` на год. Vite кладёт хеш содержимого в имена бандлов, поэтому новый деплой меняет только ссылки в `index.html`. Без `no-cache` WebView Telegram сам решает, сколько держать `index.html`, и после зелёного деплоя ещё часами показывает старую версию.
+
+```bash
+curl -sI https://botappetit.goida.root.sx/ | grep -i cache-control                # no-cache
+curl -sI https://botappetit.goida.root.sx/assets/$(curl -s https://botappetit.goida.root.sx/ \
+  | grep -oE 'index-[^"]+\.js' | head -1) | grep -i cache-control                # max-age=31536000, immutable
+```
+
+Если клиент закешировал `index.html` до этой настройки, кеш придётся сбросить вручную. На десктопе: правый клик по Mini App → Reload Page. На телефоне: полностью закрыть Mini App, а если не поможет — очистить кеш в настройках Telegram.
+
 Кнопка открытия Mini App в чате ставится ботом сама при старте, если в `.env` задан `WEBAPP_URL`:
 
 ```bash

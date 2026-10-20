@@ -125,7 +125,7 @@ Vite-плагин `webapp/dev/init-data-plugin.ts` отдаёт свежий п�
 
 ## Деплой
 
-Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` гоняет `pytest` и `lint`/`test`/`build` фронта, job `deploy` (только после зелёного `test`) заливает `webapp/dist` на VPS и рестартит бота. Статику из `~/webapp-upload` в `/var/www/botappetit` переносит `rsync` в SSH-скрипте деплоя: nginx не заходит в `/home`. nginx и certbot настраиваются вручную один раз, конфиг — `deploy/nginx-botappetit.conf`, шаги — `deploy/DEPLOY.md`. Миграции данных (`migrate_*.py`) в CI не входят, запускаются руками.
+Push в `main` → GitHub Actions (`.github/workflows/deploy.yml`): job `test` гоняет `pytest` и `lint`/`test`/`build` фронта, job `deploy` (только после зелёного `test`) заливает `webapp/dist` на VPS и рестартит бота. Статику из `~/webapp-upload` в `/var/www/botappetit` переносит `rsync` в SSH-скрипте деплоя: nginx не заходит в `/home`. nginx и certbot настраиваются вручную один раз, конфиг — `deploy/nginx-botappetit.conf`, шаги — `deploy/DEPLOY.md`. CI конфиг nginx не обновляет. `index.html` отдаётся с `no-cache`, `/assets/` — с `immutable`, иначе WebView Telegram после деплоя показывает старую версию. Миграции данных (`migrate_*.py`) в CI не входят, запускаются руками.
 
 ## Бэкап памяти
 
