@@ -18,10 +18,16 @@ ADMIN_USER_ID=...       # твой Telegram ID (узнать: @userinfobot)
 # Бэкап (см. раздел "Бэкап памяти" ниже)
 BACKUP_BACKEND=s3       # s3 (по умолчанию) или git
 S3_BUCKET=...
-S3_PREFIX=bot-appetit
+S3_PREFIX=bot-appetit-backup
 S3_ENDPOINT_URL=        # только для S3-совместимых хранилищ не-AWS; пусто = обычный AWS S3
 # AWS-креды подхватывает boto3 сам: AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_DEFAULT_REGION
 BACKUP_REPO_PATH=       # только если BACKUP_BACKEND=git — путь к локальному клону приватного репо
+
+# Mini App
+API_HOST=127.0.0.1      # где слушает API Mini App
+API_PORT=8080
+WEBAPP_URL=             # публичный https-адрес Mini App; если задан — у бота появится кнопка меню «Кухня»
+INITDATA_MAX_AGE=86400  # сколько секунд initData считается свежим
 ```
 
 ```bash
@@ -73,6 +79,7 @@ bot-appetit/
 ├── agent/chef.py        # сборка промпта, парсинг ответа LLM, логика агента
 ├── bot/
 │   ├── handlers.py      # Telegram-хендлеры (PTB v20+ async), "печатает...", одобрение заявок
+│   ├── keyboards.py     # инлайн-клавиатуры анкеты
 │   └── jobs.py          # фоновые задачи (уведомления об истекающих продуктах)
 ├── llm/
 │   ├── base.py          # абстрактный BaseLLMClient
@@ -86,11 +93,14 @@ bot-appetit/
 ├── webapp_api/          # HTTP API для Mini App (FastAPI): проверка initData, роуты
 ├── webapp/              # фронтенд Mini App (Vue 3 + TS + Vite)
 ├── tests/               # pytest (проверка initData, API, запуск сервера)
-├── deploy/              # systemd unit-файлы
-├── docs/db-migration.md # дизайн-документ перехода с JSON на SQLite (rationale, decision log)
+├── deploy/              # systemd unit-файлы, конфиг nginx, DEPLOY.md
+├── docs/
+│   ├── architecture.md  # как устроено сейчас: память, онбординг, команды, API Mini App, деплой, бэкап
+│   └── ...              # дизайн-документы (db-migration, telegram-mini-app*, onboarding-unification)
 ├── config.py            # конфиг из .env
 ├── main.py              # точка входа
 ├── migrate_to_sqlite.py # разовый скрипт миграции легаси JSON → SQLite
+├── migrate_normalize_settings.py # разовый скрипт: порции/время к пресетам Mini App
 ├── backup.py            # ежедневный снапшот data/bot.db → S3 или git-репо
 └── data/                # память агента (в .gitignore)
     ├── bot.db            # SQLite — вся память бота
@@ -168,5 +178,4 @@ Mini App отдаёт nginx (HTTPS, `botappetit.goida.root.sx`), `/api/` про�
 - Ограничение на количество сообщений в сутки
 - Мультиязычность
 - Сезонность продуктов
-- Список покупок
 - Интеграции с рецептурными базами
