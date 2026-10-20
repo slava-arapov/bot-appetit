@@ -9,6 +9,8 @@ const api = vi.hoisted(() => ({
   getProfile: vi.fn(),
   createTag: vi.fn(),
   deleteTag: vi.fn(),
+  clearContext: vi.fn(),
+  restoreContext: vi.fn(),
 }))
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
@@ -21,6 +23,7 @@ const profile = (): ProfileResponse => ({
   likes: [{ id: 3, value: 'сыр' }],
   dislikes: [],
   equipment_options: ['духовка', 'плита', 'блендер'],
+  current_context: { notes: 'ужин на двоих', updated: '2026-10-18' },
 })
 
 beforeEach(() => {
@@ -29,6 +32,8 @@ beforeEach(() => {
     .mockReset()
     .mockImplementation(async (kind: string, value: string) => ({ id: 100, kind, value }))
   api.deleteTag.mockReset().mockResolvedValue(undefined)
+  api.clearContext.mockReset().mockResolvedValue(undefined)
+  api.restoreContext.mockReset().mockResolvedValue(undefined)
   useSnackbar().dismiss()
   window.Telegram = { WebApp: createMockWebApp('x') }
 })
@@ -50,9 +55,10 @@ describe('ProfileView', () => {
     expect(w.find('.van-skeleton').exists()).toBe(true)
   })
 
-  it('показывает четыре группы в порядке: ограничения, техника, любит, не любит', async () => {
+  it('показывает заметку бота и четыре группы в порядке: ограничения, техника, любит, не любит', async () => {
     const w = await mountView()
     expect(w.findAll('h2').map((h) => h.text())).toEqual([
+      'Что бот сейчас помнит',
       'Ограничения',
       'Техника и посуда',
       'Любит',
@@ -62,13 +68,13 @@ describe('ProfileView', () => {
 
   it('чек-лист техники строится из списка, пришедшего с сервера', async () => {
     const w = await mountView()
-    const items = w.findAll('section')[1].findAll('[data-test="item"]')
+    const items = w.findAll('section')[2].findAll('[data-test="item"]')
     expect(items.map((i) => i.text())).toEqual(['духовка', 'плита', 'блендер'])
   })
 
   it('добавление тега в «Не любит» сохраняет его', async () => {
     const w = await mountView()
-    const dislikes = w.findAll('section')[3]
+    const dislikes = w.findAll('section')[4]
 
     await dislikes.get('[data-test="input"]').setValue('лук')
     await dislikes.get('[data-test="add"]').trigger('click')
@@ -85,6 +91,18 @@ describe('ProfileView', () => {
 
     expect(api.deleteTag).toHaveBeenCalledWith(3)
     expect(useSnackbar().current.value?.message).toBe('Удалено · сыр')
+  })
+
+  it('«Очистить» стирает заметку и предлагает отменить', async () => {
+    const w = await mountView()
+    expect(w.get('[data-test="notes"]').text()).toBe('ужин на двоих')
+
+    await w.get('[data-test="clear"]').trigger('click')
+    await flushPromises()
+
+    expect(api.clearContext).toHaveBeenCalled()
+    expect(w.text()).toContain('Пока ничего')
+    expect(useSnackbar().current.value?.message).toBe('Заметка очищена')
   })
 
   it('чеклист: включение пункта техники сохраняет его', async () => {

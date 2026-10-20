@@ -1,9 +1,12 @@
 import { ref } from 'vue'
 import {
   ApiError,
+  clearContext as apiClearContext,
   createTag,
   deleteTag,
   getProfile,
+  restoreContext as apiRestoreContext,
+  type CurrentContext,
   type TagsByKind,
   type Tag,
   type TagKind,
@@ -16,6 +19,8 @@ export function useProfile() {
   const tags = ref<TagsByKind>({ restrictions: [], equipment: [], likes: [], dislikes: [] })
   // Список техники приходит с сервера (config.EQUIPMENT_OPTIONS), тот же, что кнопки в онбординге
   const equipmentOptions = ref<string[]>([])
+  // Заметку пишет только LLM; отсюда её можно лишь стереть (и вернуть по «Отменить»)
+  const currentContext = ref<CurrentContext>({ notes: '', updated: '' })
   const loading = ref(true)
   const loadError = ref<string | null>(null)
   const snackbar = useSnackbar()
@@ -27,9 +32,10 @@ export function useProfile() {
     if (!silent) loading.value = true
     loadError.value = null
     try {
-      const { equipment_options, ...byKind } = await getProfile()
+      const { equipment_options, current_context, ...byKind } = await getProfile()
       tags.value = byKind
       equipmentOptions.value = equipment_options ?? []
+      currentContext.value = current_context ?? { notes: '', updated: '' }
     } catch (e) {
       loadError.value = e instanceof Error ? e.message : String(e)
     } finally {
@@ -101,7 +107,44 @@ export function useProfile() {
     else await add('equipment', value)
   }
 
+  async function clearContext(): Promise<void> {
+    const previous = currentContext.value
+    if (!previous.notes) return
+    currentContext.value = { notes: '', updated: '' }
+    try {
+      await apiClearContext()
+      haptic.success()
+      snackbar.showUndo('Заметка очищена', () => void restoreContext(previous))
+    } catch {
+      currentContext.value = previous
+      haptic.error()
+      snackbar.showError('Не удалось очистить', () => void clearContext())
+    }
+  }
+
+  async function restoreContext(previous: CurrentContext): Promise<void> {
+    currentContext.value = previous
+    try {
+      await apiRestoreContext(previous)
+    } catch {
+      currentContext.value = { notes: '', updated: '' }
+      haptic.error()
+      snackbar.showError('Не удалось вернуть заметку', () => void restoreContext(previous))
+    }
+  }
+
   void load()
 
-  return { tags, equipmentOptions, loading, loadError, add, remove, toggleEquipment, reload: load }
+  return {
+    tags,
+    equipmentOptions,
+    currentContext,
+    loading,
+    loadError,
+    add,
+    remove,
+    toggleEquipment,
+    clearContext,
+    reload: load,
+  }
 }

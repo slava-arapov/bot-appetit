@@ -9,6 +9,8 @@ const api = vi.hoisted(() => ({
   getProfile: vi.fn(),
   createTag: vi.fn(),
   deleteTag: vi.fn(),
+  clearContext: vi.fn(),
+  restoreContext: vi.fn(),
 }))
 vi.mock('../api/client', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../api/client')>()),
@@ -21,6 +23,7 @@ const profile = (): ProfileResponse => ({
   likes: [{ id: 3, value: 'сыр' }],
   dislikes: [],
   equipment_options: ['духовка', 'плита'],
+  current_context: { notes: 'ужин на двоих', updated: '2026-10-18' },
 })
 
 beforeEach(() => {
@@ -29,6 +32,8 @@ beforeEach(() => {
     .mockReset()
     .mockImplementation(async (kind: string, value: string) => ({ id: 100, kind, value }))
   api.deleteTag.mockReset().mockResolvedValue(undefined)
+  api.clearContext.mockReset().mockResolvedValue(undefined)
+  api.restoreContext.mockReset().mockResolvedValue(undefined)
   useSnackbar().dismiss()
   window.Telegram = { WebApp: createMockWebApp('x') }
 })
@@ -60,6 +65,7 @@ describe('useProfile: загрузка', () => {
     const store = await ready()
     expect(store.equipmentOptions.value).toEqual(['духовка', 'плита'])
     expect(Object.keys(store.tags.value).sort()).toEqual(['dislikes', 'equipment', 'likes', 'restrictions'])
+    expect(store.currentContext.value).toEqual({ notes: 'ужин на двоих', updated: '2026-10-18' })
   })
 
   it('при ошибке сохраняет сообщение', async () => {
@@ -167,6 +173,50 @@ describe('useProfile: удаление', () => {
 
     expect(values(store, 'likes')).toEqual(['сыр'])
     expect(useSnackbar().current.value).toMatchObject({ kind: 'error' })
+  })
+})
+
+describe('useProfile: заметка бота', () => {
+  it('очищается сразу, на сервер уходит DELETE и появляется «Отменить»', async () => {
+    const store = await ready()
+
+    const done = store.clearContext()
+    expect(store.currentContext.value.notes).toBe('')
+    await done
+
+    expect(api.clearContext).toHaveBeenCalled()
+    expect(useSnackbar().current.value).toMatchObject({ message: 'Заметка очищена', kind: 'undo' })
+  })
+
+  it('«Отменить» возвращает заметку вместе с прежней датой', async () => {
+    const store = await ready()
+    await store.clearContext()
+
+    useSnackbar().act()
+    await flushPromises()
+
+    const previous = { notes: 'ужин на двоих', updated: '2026-10-18' }
+    expect(api.restoreContext).toHaveBeenCalledWith(previous)
+    expect(store.currentContext.value).toEqual(previous)
+  })
+
+  it('при ошибке возвращает заметку на место и предлагает повторить', async () => {
+    const store = await ready()
+    api.clearContext.mockRejectedValueOnce(new Error('нет сети'))
+
+    await store.clearContext()
+
+    expect(store.currentContext.value.notes).toBe('ужин на двоих')
+    expect(useSnackbar().current.value).toMatchObject({ message: 'Не удалось очистить', kind: 'error' })
+  })
+
+  it('пустую заметку не очищает', async () => {
+    api.getProfile.mockResolvedValueOnce({ ...profile(), current_context: { notes: '', updated: '' } })
+    const store = await ready()
+
+    await store.clearContext()
+
+    expect(api.clearContext).not.toHaveBeenCalled()
   })
 })
 

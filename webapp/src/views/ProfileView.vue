@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import ContextNote from '../components/profile/ContextNote.vue'
 import EquipmentChecklist from '../components/profile/EquipmentChecklist.vue'
 import TagGroup from '../components/profile/TagGroup.vue'
 import { useProfile } from '../composables/useProfile'
 
 const profile = useProfile()
-const { tags, equipmentOptions, loading, loadError } = profile
+const { tags, equipmentOptions, currentContext, loading, loadError } = profile
 </script>
 
 <template>
@@ -21,7 +22,8 @@ const { tags, equipmentOptions, loading, loadError } = profile
     </div>
 
     <template v-else>
-      <!-- порядок: то, что чаще всего влияет на выбор рецепта, — выше -->
+      <!-- порядок: то, что чаще всего влияет на выбор рецепта, — выше; заметка меняется чаще всего -->
+      <ContextNote :context="currentContext" @clear="profile.clearContext()" />
       <TagGroup
         title="Ограничения"
         :tags="tags.restrictions"

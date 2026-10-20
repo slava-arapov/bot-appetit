@@ -46,6 +46,19 @@ async def test_saves_current_context_with_today(user):
     assert context == {"notes": "готовлю ужин на двоих", "updated": str(date.today())}
 
 
+async def test_null_current_context_clears_note(user):
+    await apply_memory_update(user, {"current_context": "готовлю ужин на двоих"})
+    await apply_memory_update(user, {"current_context": None})
+    assert (await load_profile(user))["current_context"] == {"notes": "", "updated": ""}
+
+
+@pytest.mark.parametrize("update", [{"current_context": ""}, {"current_context": "   "}, {"likes": ["сыр"]}])
+async def test_blank_or_missing_current_context_keeps_note(user, update):
+    await apply_memory_update(user, {"current_context": "готовлю ужин на двоих"})
+    await apply_memory_update(user, update)
+    assert (await load_profile(user))["current_context"]["notes"] == "готовлю ужин на двоих"
+
+
 async def test_appends_history_entry_with_default_date(user):
     await apply_memory_update(user, {"history": {"dish": "борщ", "rating": "понравилось"}})
     history = await load_history(user)

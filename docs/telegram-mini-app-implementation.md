@@ -98,7 +98,7 @@ API: `GET/POST /api/pantry`, `PATCH/DELETE /api/pantry/{id}`; `name` 1–80 си
 - `list_tags(user_id)` по четырём `kind` с `id`; `add_tag(user_id, kind, value)` (trim, 1–40 символов, дедуп внутри `kind` через `casefold()`, повтор возвращает существующий тег); `remove_tag(user_id, tag_id)` с проверкой владельца.
 - `save_profile` пересоздаёт теги (онбординг), поэтому `id` нестабильны; `apply_memory_update` переводится на `add_tag`/`remove_tag`. Перед реализацией прочитать `apply_memory_update`, чтобы не сломать контракт `memory_update`.
 
-API: `GET /api/profile` → `{restrictions, equipment, likes, dislikes}` (элементы `{id, value}`); `POST /api/profile/tags {kind, value}`; `DELETE /api/profile/tags/{id}`.
+API: `GET /api/profile` → `{restrictions, equipment, likes, dislikes}` (элементы `{id, value}`) плюс `equipment_options` и `current_context: {notes, updated}`; `POST /api/profile/tags {kind, value}`; `DELETE /api/profile/tags/{id}`; `DELETE /api/profile/context` (очистить заметку бота) и `PUT /api/profile/context {notes, updated}` (вернуть её по «Отменить»).
 
 Экран:
 - Группы: restrictions → equipment → likes → dislikes; пустая группа показывает «Пока ничего не добавлено».

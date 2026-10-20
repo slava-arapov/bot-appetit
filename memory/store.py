@@ -227,6 +227,18 @@ async def remove_tag(user_id: int, tag_id: int) -> bool:
     return cursor.rowcount > 0
 
 
+async def get_current_context(user_id: int) -> dict:
+    """Заметка бота о текущей ситуации пользователя; без профиля — пустая."""
+    conn = get_conn()
+    row = await (await conn.execute(
+        "SELECT current_context_notes, current_context_updated FROM profiles WHERE user_id = ?",
+        (user_id,),
+    )).fetchone()
+    if not row:
+        return {"notes": "", "updated": ""}
+    return {"notes": row["current_context_notes"] or "", "updated": row["current_context_updated"] or ""}
+
+
 async def set_current_context(user_id: int, notes: str, updated: str):
     conn = get_conn()
     await conn.execute("INSERT OR IGNORE INTO profiles (user_id) VALUES (?)", (user_id,))
@@ -484,8 +496,11 @@ async def apply_memory_update(user_id: int, update: dict):
             if clean:
                 await add_tag(user_id, kind, clean)
 
-    if update.get("current_context"):
-        await set_current_context(user_id, update["current_context"], str(date.today()))
+    # null — заметка неактуальна, стираем; "" (как в шаблоне ответа) и отсутствие ключа — не трогаем
+    if "current_context" in update and update["current_context"] is None:
+        await set_current_context(user_id, "", "")
+    elif isinstance(update.get("current_context"), str) and update["current_context"].strip():
+        await set_current_context(user_id, update["current_context"].strip(), str(date.today()))
 
     if update.get("history"):
         entries = update["history"]

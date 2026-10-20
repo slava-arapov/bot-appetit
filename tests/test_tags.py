@@ -7,9 +7,12 @@ from config import EQUIPMENT_OPTIONS
 from memory.store import (
     add_tag,
     apply_memory_update,
+    get_current_context,
     list_tags,
+    load_profile,
     remove_tag,
     save_profile,
+    set_current_context,
 )
 from memory.users import approve_user
 from tests.test_api import headers
@@ -104,7 +107,11 @@ async def test_onboarding_save_still_replaces_tags(user):
 async def test_api_get_profile_empty(client, user):
     r = await client.get("/api/profile", headers=headers())
     assert r.status_code == 200
-    assert r.json() == {**{kind: [] for kind in KINDS}, "equipment_options": EQUIPMENT_OPTIONS}
+    assert r.json() == {
+        **{kind: [] for kind in KINDS},
+        "equipment_options": EQUIPMENT_OPTIONS,
+        "current_context": {"notes": "", "updated": ""},
+    }
 
 
 async def test_api_get_profile_returns_equipment_options(client, user):
@@ -176,6 +183,49 @@ async def test_api_profile_without_auth_is_401(client):
     assert (await client.get("/api/profile")).status_code == 401
     assert (await client.post("/api/profile/tags", json={"kind": "likes", "value": "x"})).status_code == 401
     assert (await client.delete("/api/profile/tags/1")).status_code == 401
+    assert (await client.delete("/api/profile/context")).status_code == 401
+    assert (await client.put("/api/profile/context", json={"notes": "x"})).status_code == 401
+
+
+# --- Заметка бота (current_context) ---
+
+
+async def test_api_get_profile_returns_current_context(client, user):
+    await set_current_context(user, "ужин на двоих", "2026-10-18")
+    r = await client.get("/api/profile", headers=headers())
+    assert r.json()["current_context"] == {"notes": "ужин на двоих", "updated": "2026-10-18"}
+
+
+async def test_api_clear_context(client, user):
+    await set_current_context(user, "ужин на двоих", "2026-10-18")
+    r = await client.delete("/api/profile/context", headers=headers())
+    assert r.status_code == 204
+    assert await get_current_context(user) == {"notes": "", "updated": ""}
+    assert (await load_profile(user))["current_context"]["notes"] == ""
+
+
+async def test_api_clear_context_without_profile_is_ok(client, user):
+    assert (await client.delete("/api/profile/context", headers=headers())).status_code == 204
+
+
+async def test_api_restore_context_keeps_original_date(client, user):
+    body = {"notes": " ужин на двоих ", "updated": "2026-10-18"}
+    r = await client.put("/api/profile/context", json=body, headers=headers())
+    assert r.status_code == 204
+    assert await get_current_context(user) == {"notes": "ужин на двоих", "updated": "2026-10-18"}
+
+
+@pytest.mark.parametrize("body", [{"notes": "  "}, {"notes": "x" * 501}, {"notes": "x", "updated": "вчера"}])
+async def test_api_restore_context_validates(client, user, body):
+    r = await client.put("/api/profile/context", json=body, headers=headers())
+    assert r.status_code == 422
+
+
+async def test_api_clear_context_does_not_touch_other_users(client, user):
+    await approve_user(43)
+    await set_current_context(43, "их заметка", "2026-10-18")
+    await client.delete("/api/profile/context", headers=headers())
+    assert (await get_current_context(43))["notes"] == "их заметка"
 
 
 # --- Теги хранятся в нижнем регистре ---

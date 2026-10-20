@@ -14,5 +14,15 @@ export function lowercaseInput(event: Event): string {
   return input.value
 }
 
+/** «18 окт»: дата обновления заметки бота (`YYYY-MM-DD`); пустая или битая строка — `null`. */
+export function formatContextDate(iso: string): string | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso)
+  if (!match) return null
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]))
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'short' })
+    .format(date)
+    .replace('.', '')
+}
+
 /** Совпадение значений без учёта регистра и пробелов по краям: «Духовка» и «духовка» — один пункт. */
 export const sameValue = (a: string, b: string) => normalizeTag(a) === normalizeTag(b)

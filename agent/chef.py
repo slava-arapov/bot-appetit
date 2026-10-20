@@ -110,6 +110,7 @@ SYSTEM_PROMPT_TEMPLATE = """\
 - Если пользователь согласился добавить продукт в список покупок («да», «добавь», «надо купить») или сам просит записать его в покупки — status "to_buy"
 - Продукты со статусом нужно купить (to_buy) — это список покупок, их нет в наличии: при подборе рецепта считай их отсутствующими и называй среди того, что надо докупить
 - Если узнал о новой технике/посуде — включи в memory_update.equipment
+- current_context — короткая заметка о текущей ситуации (что сейчас готовит, для кого, планы на ближайшие дни). Когда ситуация меняется — пиши новую заметку целиком, она заменит старую. Когда заметка стала неактуальной (блюдо приготовлено, гости ушли, планы отменились, пользователь просит забыть, или по дате обновления видно, что ситуация давно прошла) — верни null, она сотрётся. Если менять нечего — пустая строка
 - Формат рецепта:
 * Ингредиенты (список продуктов с количеством)
 * Приготовление
@@ -184,6 +185,15 @@ def _format_pantry(pantry: list[dict]) -> str:
     return ", ".join(parts)
 
 
+def _format_context(context: dict) -> str:
+    notes = context.get("notes")
+    if not notes:
+        return "нет"
+    # дата — в том же ISO, что и «Сегодня», чтобы модель могла понять, что заметка устарела
+    updated = context.get("updated")
+    return f"{notes} (обновлено {updated})" if updated else notes
+
+
 def build_system_prompt(profile: dict, history: list, pantry: list) -> str:
     last_dishes = history[-5:] if history else []
     dishes_str = ", ".join(
@@ -199,7 +209,7 @@ def build_system_prompt(profile: dict, history: list, pantry: list) -> str:
         servings=describe_servings(profile.get("servings")) or "не указано",
         cooking_time=describe_cooking_time(profile.get("cooking_time")) or "не указано",
         pantry=_format_pantry(pantry),
-        context_notes=profile.get("current_context", {}).get("notes") or "нет",
+        context_notes=_format_context(profile.get("current_context", {})),
         last_dishes=dishes_str,
     )
 

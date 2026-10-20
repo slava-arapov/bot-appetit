@@ -11,6 +11,7 @@ from memory.store import (
     add_pantry_item,
     add_tag,
     delete_pantry_item,
+    get_current_context,
     get_settings,
     get_summary,
     list_pantry,
@@ -19,6 +20,7 @@ from memory.store import (
     reset_all,
     reset_context,
     reset_onboarding,
+    set_current_context,
     set_settings,
     update_pantry_item,
 )
@@ -54,6 +56,12 @@ class PantryPatch(BaseModel):
 class TagCreate(BaseModel):
     kind: Literal["likes", "dislikes", "restrictions", "equipment"]
     value: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+
+
+class ContextRestore(BaseModel):
+    """Возврат заметки после «Отменить»: вместе с прежней датой, а не сегодняшней."""
+    notes: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=500)]
+    updated: date | None = None
 
 
 @router.get("/me")
@@ -129,7 +137,24 @@ async def remove_pantry_item(item_id: int, user: dict = Depends(current_user)):
 
 @router.get("/profile")
 async def read_profile(user: dict = Depends(current_user)):
-    return {**await list_tags(int(user["id"])), "equipment_options": EQUIPMENT_OPTIONS}
+    user_id = int(user["id"])
+    return {
+        **await list_tags(user_id),
+        "equipment_options": EQUIPMENT_OPTIONS,
+        "current_context": await get_current_context(user_id),
+    }
+
+
+@router.delete("/profile/context", status_code=204)
+async def clear_context(user: dict = Depends(current_user)):
+    await set_current_context(int(user["id"]), "", "")
+    return Response(status_code=204)
+
+
+@router.put("/profile/context", status_code=204)
+async def restore_context(body: ContextRestore, user: dict = Depends(current_user)):
+    await set_current_context(int(user["id"]), body.notes, _iso(body.updated) or "")
+    return Response(status_code=204)
 
 
 @router.post("/profile/tags", status_code=201)

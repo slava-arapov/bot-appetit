@@ -94,9 +94,25 @@ export interface Tag {
 }
 
 export type TagsByKind = Record<TagKind, Tag[]>
-export type ProfileResponse = TagsByKind & { equipment_options: string[] }
+
+/** Заметка бота о текущей ситуации (`profiles.current_context_*`); пустые строки — заметки нет. */
+export interface CurrentContext {
+  notes: string
+  updated: string
+}
+
+export type ProfileResponse = TagsByKind & {
+  equipment_options: string[]
+  current_context: CurrentContext
+}
 
 export const getProfile = () => apiFetch<ProfileResponse>('/api/profile')
+
+export const clearContext = () => apiFetch<void>('/api/profile/context', { method: 'DELETE' })
+
+/** Возвращает заметку после «Отменить» вместе с прежней датой. */
+export const restoreContext = ({ notes, updated }: CurrentContext) =>
+  apiFetch<void>('/api/profile/context', jsonInit('PUT', { notes, updated: updated || null }))
 
 export const createTag = (kind: TagKind, value: string) =>
   apiFetch<Tag & { kind: TagKind }>('/api/profile/tags', jsonInit('POST', { kind, value }))
